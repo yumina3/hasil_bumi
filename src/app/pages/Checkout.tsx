@@ -63,9 +63,9 @@ export function Checkout() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleDeliveryMethodChange = (value: 'pickup' | 'delivery') => {
+  const handleDeliveryMethodChange = (value: 'pick_up' | 'delivery') => {
     setDeliveryMethod(value);
-    setDeliveryFee(value === 'pickup' ? 0 : 15000);
+    setDeliveryFee(value === 'pick_up' ? 0 : 15000);
   };
 
   const handleBranchChange = (value: string) => {
@@ -75,7 +75,7 @@ export function Checkout() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. Validasi
+    // 1. Validasi Input
     if (!formData.name || !formData.phone) {
       toast.error('Mohon lengkapi nama dan nomor WhatsApp');
       return;
@@ -92,9 +92,9 @@ export function Checkout() {
     setIsProcessing(true);
 
     try {
-      // 2. Generate ID & Invoice
-      const orderId = 'HB' + Date.now();
-      const noInvoice = `INV/${new Date().getFullYear()}/${orderId.slice(-8)}`;
+      // 2. Generate ID yang aman untuk tipe INTEGER (maks 9 digit)
+      const orderId = Number(Date.now().toString().slice(-9)); 
+      const noInvoice = `INV/${new Date().getFullYear()}/${orderId}`;
 
       // 3. Simpan ke Tabel Pesanan
       const { error: orderError } = await supabase
@@ -102,7 +102,9 @@ export function Checkout() {
         .insert([{
           id: orderId,
           no_invoice: noInvoice,
-          user_id: user?.id ?? null,
+          // REVISI: Gunakan null jika user_id di DB adalah INTEGER. 
+          // Jika sudah diubah ke UUID di DB, baru ganti ke user?.id
+          user_id: null, 
           cabang_id: selectedBranchId,
           subtotal: totalPrice,
           ongkos_kirim: deliveryFee,
@@ -121,13 +123,14 @@ export function Checkout() {
 
       // 4. Simpan ke Tabel Detail Pesanan
       const detailItems = cart.map(item => ({
-        pesanan_id: orderId,
-        produk_id: item.id,
-        nama_produk: item.nama_produk || item.name,
-        harga_satuan: item.harga_jual || item.price,
-        jumlah: item.quantity,
-        total_harga: (item.harga_jual || item.price) * item.quantity
-      }));
+  pesanan_id: orderId,
+  produk_id: Number(item.id),
+  nama_produk: item.nama_produk || item.name,
+  harga_saat_beli: item.harga_jual || item.price,
+  qty: item.quantity,
+  total_harga: (item.harga_jual || item.price) * item.quantity
+}));
+      
 
       const { error: detailError } = await supabase
         .from('detail_pesanan')
@@ -135,9 +138,7 @@ export function Checkout() {
 
       if (detailError) throw detailError;
 
-      // 5. Sukses & Navigasi
-      toast.success('Pesanan berhasil dibuat!');
-      
+      // 5. Persiapan Data untuk Halaman Payment
       const summaryData = {
         pesanan_id: orderId,
         noInvoice: noInvoice,
@@ -152,45 +153,38 @@ export function Checkout() {
         }))
       };
 
-      clearCart();
+      // 6. Sukses & Navigasi
+      toast.success('Pesanan berhasil dibuat!');
       navigate('/payment', { state: summaryData });
+      
+      // Hapus keranjang SETELAH perintah navigasi jalan
+      setTimeout(() => clearCart(), 500);
 
     } catch (error: any) {
-  console.error("Detail Error:", error);
-
-  let userFriendlyMsg = "Terjadi kesalahan saat memproses pesanan.";
-
-  // 1. Cek jika error berasal dari tipe data (PostgreSQL code 22P02)
-  if (error.code === '22P02' || error.message?.includes('type integer')) {
-    userFriendlyMsg = "Format nomor pesanan tidak valid. Silakan hubungi admin.";
-    // Log internal untuk developer
-    console.warn("DEV NOTE: Pastikan kolom ID di database adalah TEXT, bukan INTEGER.");
-  } 
-  
-  // 2. Cek jika error adalah timeout/jaringan
-  else if (error.message?.includes('timeout') || error.status === 408) {
-    userFriendlyMsg = "Koneksi tidak stabil atau server sibuk. Silakan coba lagi.";
-  }
-
-  // 3. Jika ada pesan spesifik dari server yang aman ditampilkan
-  else if (error.message) {
-    userFriendlyMsg = error.message;
-  }
-
-  toast.error(userFriendlyMsg);
-
-} finally {
-  setIsProcessing(false);
-}
+      console.error("Detail Error:", error);
+      let userFriendlyMsg = error.message || "Terjadi kesalahan saat memproses pesanan.";
+      
+      if (error.code === '22P02' || error.message?.includes('type integer')) {
+        userFriendlyMsg = "Format data tidak valid (ID/UUID mismatch).";
+      }
+      toast.error(userFriendlyMsg);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  // Proteksi Keranjang Kosong
-  if (cart.length === 0) {
-    navigate('/cart');
-    return null;
-  }
+      // Gunakan useEffect untuk proteksi agar tidak tabrakan dengan proses render
+    useEffect(() => {
+      if (cart.length === 0 && !isProcessing) {
+        navigate('/cart');
+      }
+    }, [cart.length, navigate, isProcessing]);
 
-  const selectedBranch = branchList.find((b) => b.id === selectedBranchId);
+    // Jangan biarkan return null menghalangi render saat sedang memproses (isProcessing)
+    if (cart.length === 0 && !isProcessing) {
+      return null;
+}
+  
 
   return (
     <div className="min-h-screen py-8 bg-gray-50">
@@ -208,9 +202,9 @@ export function Checkout() {
                 <CardHeader><CardTitle className="text-lg">Metode & Cabang</CardTitle></CardHeader>
                 <CardContent className="space-y-6">
                   <RadioGroup value={deliveryMethod} onValueChange={handleDeliveryMethodChange} className="grid grid-cols-2 gap-4">
-                    <div className={`flex items-center space-x-2 p-3 border rounded-xl cursor-pointer ${deliveryMethod === 'pickup' ? 'border-green-600 bg-green-50' : ''}`}>
-                      <RadioGroupItem value="pickup" id="pickup" />
-                      <Label htmlFor="pickup" className="flex-1 cursor-pointer font-bold text-sm">Ambil di Toko</Label>
+                    <div className={`flex items-center space-x-2 p-3 border rounded-xl cursor-pointer ${deliveryMethod === 'pick_up' ? 'border-green-600 bg-green-50' : ''}`}>
+                      <RadioGroupItem value="pick_up" id="pick_up" />
+                      <Label htmlFor="pick_up" className="flex-1 cursor-pointer font-bold text-sm">Ambil di Toko</Label>
                     </div>
                     <div className={`flex items-center space-x-2 p-3 border rounded-xl cursor-pointer ${deliveryMethod === 'delivery' ? 'border-green-600 bg-green-50' : ''}`}>
                       <RadioGroupItem value="delivery" id="delivery" />
@@ -265,7 +259,7 @@ export function Checkout() {
                     </div>
                     <div className={`p-4 border rounded-xl cursor-pointer ${formData.paymentMethod === 'qris' ? 'border-green-600 bg-green-50' : ''}`}>
                       <RadioGroupItem value="qris" id="m-qris" className="mr-2" />
-                      <Label htmlFor="m-qris" className="font-bold cursor-pointer">QRIS / Transfer</Label>
+                      <Label htmlFor="m-qris" className="font-bold cursor-pointer">QRIS</Label>
                     </div>
                   </RadioGroup>
                 </CardContent>

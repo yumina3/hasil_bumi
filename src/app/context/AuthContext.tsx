@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from "../../../utils/supabase/info";
 
 export type UserRole = 'pelanggan' | 'admin_cabang' | 'admin_pusat';
@@ -28,45 +28,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const mapUser = async (supabaseUser: any): Promise<User> => {
     try {
-      // Query dengan timeout 5 detik
-      const queryPromise = supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('users')
         .select('id, cabang_id, peran, nama_lengkap')
         .eq('auth_id', supabaseUser.id)
-        .single();
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Query timeout')), 5000)
-      );
-
-      const { data: profileData, error: profileError } = await Promise.race([
-        queryPromise,
-        timeoutPromise,
-      ]) as any;
+        .maybeSingle();
 
       if (profileError) {
         console.error('Gagal ambil profil:', profileError.message);
       }
 
-      // Jika admin_cabang, ambil cabang_id dari tabel admin_cabang
       let cabangId = profileData?.cabang_id ?? undefined;
 
       if (profileData?.peran === 'admin_cabang' && profileData?.id) {
-        const adminQueryPromise = supabase
+        const { data: adminCabangData, error: adminError } = await supabase
           .from('admin_cabang')
           .select('cabang_id')
           .eq('user_id', profileData.id)
           .eq('is_active', true)
-          .single();
-
-        const adminTimeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Admin query timeout')), 5000)
-        );
-
-        const { data: adminCabangData, error: adminError } = await Promise.race([
-          adminQueryPromise,
-          adminTimeoutPromise,
-        ]) as any;
+          .maybeSingle();
 
         if (adminError) {
           console.error('Gagal ambil admin_cabang:', adminError.message);
@@ -98,13 +78,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    let listenerRef: any = null;
+
     const initializeAuth = async () => {
       try {
         const searchParams = new URLSearchParams(window.location.search);
         const code = searchParams.get('code');
 
         if (code && window.location.pathname === '/reset-password') {
-          setLoading(false);
+          if (isMounted) setLoading(false);
           return;
         }
 
@@ -117,39 +100,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const { data: { session } } = await supabase.auth.getSession();
 
-        if (session?.user) {
+        if (session?.user && isMounted) {
           const mapped = await mapUser(session.user);
-          setUser(mapped);
+          if (isMounted) setUser(mapped);
         }
       } catch (err: any) {
         console.error("initializeAuth error:", err.message);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    initializeAuth();
+    // Jalankan initializeAuth dulu, baru pasang listener
+    // agar tidak berebut lock dengan onAuthStateChange
+    initializeAuth().then(() => {
+      if (!isMounted) return;
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') return;
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') return;
 
-      try {
-        if (session?.user) {
-          const mapped = await mapUser(session.user);
-          setUser(mapped);
-        } else {
-          setUser(null);
+        // Skip INITIAL_SESSION karena sudah ditangani initializeAuth
+        if (event === 'INITIAL_SESSION') return;
+
+        try {
+          if (session?.user && isMounted) {
+            const mapped = await mapUser(session.user);
+            if (isMounted) setUser(mapped);
+          } else if (isMounted) {
+            setUser(null);
+          }
+        } catch (err: any) {
+          console.error("onAuthStateChange error:", err.message);
+          if (isMounted) setUser(null);
+        } finally {
+          if (isMounted) setLoading(false);
         }
-      } catch (err: any) {
-        console.error("onAuthStateChange error:", err.message);
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
+      });
+
+      listenerRef = authListener;
     });
 
     return () => {
-      authListener.subscription.unsubscribe();
+      isMounted = false;
+      listenerRef?.subscription.unsubscribe();
     };
   }, []);
 

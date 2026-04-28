@@ -142,7 +142,7 @@ export function Home() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className="text-3xl font-bold mb-2">Produk Unggulan</h2>
+              <h2 className="text-3xl font-bold mb-2">Produk Kami</h2>
               <p className="text-gray-600">Sayuran segar kualitas terbaik minggu ini</p>
             </div>
             {/* ✅ FIX: link ke /produk */}

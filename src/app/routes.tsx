@@ -65,72 +65,74 @@ export const router = createBrowserRouter([
           { path: 'inventory', Component: AdminCabangInventory },
         ],
       },
-      {
-        path: '/',
-        Component: Layout,
-        children: [
-          { index: true, Component: Home },
-          { path: 'produk', Component: Products },
-          { path: 'produk/:id', Component: ProductDetail },
-          {
-            path: 'cart',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <Cart />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'checkout',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <Checkout />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'payment',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <Payment />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'order-success',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <OrderSuccess />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'orders',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <Orders />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'order-tracking/:orderId',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <OrderTracking />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'admin',
-            element: (
-              <ProtectedRoute allowedRoles={['pelanggan']}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            ),
-          },
-          { path: '*', Component: NotFound },
-        ],
-      },
+      // ... rute admin tetap sama
+
+{
+  path: '/',
+  Component: Layout,
+  children: [
+    { index: true, Component: Home },
+    { path: 'produk', Component: Products },
+    { path: 'produk/:id', Component: ProductDetail },
+    {
+      path: 'cart',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <Cart />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'checkout',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <Checkout />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'payment',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <Payment />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'order-success',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <OrderSuccess />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'orders',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <Orders />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'order-tracking/:orderId', // Cukup tulis satu kali di sini
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <OrderTracking />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: 'admin',
+      element: (
+        <ProtectedRoute allowedRoles={['pelanggan']}>
+          <AdminDashboard />
+        </ProtectedRoute>
+      ),
+    },
+    { path: '*', Component: NotFound },
+  ],
+},
     ],
   },
 ]);

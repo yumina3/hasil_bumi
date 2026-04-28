@@ -20,7 +20,7 @@ export interface CartItem extends Product {
   selectedWeight?: string; // Menyimpan info berat (misal: '500 gram (1/2kg)' atau '1.5 kg')
 }
 
-export type DeliveryMethod = 'pickup' | 'delivery';
+export type DeliveryMethod = 'pick_up' | 'delivery';
 
 interface CartContextType {
   cart: CartItem[];
@@ -40,7 +40,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [deliveryMethod, setDeliveryMethodState] = useState<DeliveryMethod>('pickup');
+  const [deliveryMethod, setDeliveryMethodState] = useState<DeliveryMethod>('pick_up');
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
 
   // 1. Logika Tambah ke Keranjang

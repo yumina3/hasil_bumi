@@ -28,7 +28,7 @@ export function Cart() {
           <p className="text-gray-600 mb-6">
             Belum ada produk dalam keranjang Anda
           </p>
-          <Link to="/products">
+          <Link to="/produk">
             <Button className="bg-green-600 hover:bg-green-700 gap-2">
               Mulai Belanja
               <ArrowRight className="h-4 w-4" />

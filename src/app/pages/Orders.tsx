@@ -28,24 +28,28 @@ export function Orders() {
   }, []);
 
   const fetchOrders = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Ambil data dari tabel 'orders'
-      // Pastikan kolom-kolom ini sesuai dengan nama di dashboard Supabase kamu
-      const { data, error } = await supabase
-        .from('pesanan')
-        .select('*')
-        .order('created_at', { ascending: false });
+  try {
+    setIsLoading(true);
+    
+    // Ambil data dari tabel 'pesanan' dan join ke 'detail_pesanan'
+    const { data, error } = await supabase
+      .from('pesanan')
+      .select(`
+        *,
+        detail_pesanan (
+          qty
+        )
+      `) // <--- Ini bagian yang diubah untuk mengambil data qty
+      .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setOrders(data || []);
-    } catch (error: any) {
-      console.error('Error fetching orders:', error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    if (error) throw error;
+    setOrders(data || []);
+  } catch (error: any) {
+    console.error('Error fetching orders:', error.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -175,10 +179,12 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
             <p className="text-gray-600">Metode Pembayaran</p>
             <p className="font-semibold">{order.metode_pembayaran}</p>
           </div>
-          // <div>
-          //   <p className="text-gray-600">Jumlah Item</p>
-          //   <p className="font-semibold">{order.items_count || 0} produk</p>
-          // </div>
+          <div>
+          <p className="text-gray-600 text-sm">Jumlah Item</p>
+          <p className="font-semibold text-green-700">
+            {order.detail_pesanan?.reduce((total: number, item: any) => total + (item.qty || 0), 0) || 0} produk
+          </p>
+        </div>
           <div>
             <p className="text-gray-600">Metode Pengiriman</p>
             <p className="font-semibold capitalize">{order.delivery_method}</p>

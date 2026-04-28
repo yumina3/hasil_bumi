@@ -10,7 +10,7 @@ import { supabase } from '../../../utils/supabase/info';
 interface PaymentState {
   pesanan_id: string;
   noInvoice: string;
-  metode_bayar: 'dompet_digital' | 'transfer_bank' | 'cod'; // ← sesuai DB
+  metode_bayar: 'dompet_digital' | 'transfer_bank' | 'cod';
   total: number;
   deliveryMethod: string;
   customerName: string;
@@ -72,10 +72,6 @@ export function Payment() {
     setPaymentStatus('processing');
 
     try {
-      // ✅ Logika status berdasarkan 3 metode bayar di DB kamu
-      // dompet_digital → langsung dianggap lunas (simulasi)
-      // transfer_bank  → menunggu konfirmasi manual
-      // cod            → bayar saat barang tiba
       const isInstant = finalMethod === 'dompet_digital';
       const isCOD = finalMethod === 'cod';
 
@@ -87,9 +83,7 @@ export function Payment() {
 
       const paymentStatusDb = isInstant
         ? 'berhasil'
-        : isCOD
-        ? 'pending'        // bayar nanti saat COD
-        : 'pending';       // transfer_bank menunggu konfirmasi
+        : 'pending';
 
       // Update status pesanan
       const { error: orderError } = await supabase
@@ -105,14 +99,14 @@ export function Payment() {
       // Insert ke tabel pembayaran
       const { error: payError } = await supabase
         .from('pembayaran')
-        .insert([{
+        .upsert([{
           pesanan_id: state.pesanan_id,
-          metode_bayar: finalMethod,            // 'dompet_digital' | 'transfer_bank' | 'cod'
-          status_pembayaran: paymentStatusDb,   // 'berhasil' | 'pending'
+          metode_bayar: finalMethod,
+          status_pembayaran: paymentStatusDb,
           jumlah_bayar: state.total,
           tgl_bayar: isInstant ? new Date().toISOString() : null,
-          gateway_ref_id: isInstant ? `REF-${Date.now()}` : null,
-        }]);
+          gateway_ref_id: isInstant ? `REF-${state.pesanan_id}` : null,
+        }], { onConflict: 'pesanan_id' });
 
       if (payError) throw payError;
 
@@ -126,7 +120,16 @@ export function Payment() {
             : 'Pesanan Dibuat! Selesaikan transfer bank Anda.'
         );
         setTimeout(() => {
-          navigate('/order-success', { state: { orderId: state.pesanan_id } });
+          // ✅ FIX: kirim semua state yang dibutuhkan OrderSuccess
+          navigate('/order-success', {
+            state: {
+              orderId: state.pesanan_id,           // ID angka dari DB → untuk tracking
+              noInvoice: state.noInvoice,           // string invoice → untuk display
+              paymentMethod: state.metode_bayar,    // metode bayar
+              deliveryMethod: state.deliveryMethod, // metode pengiriman
+              total: state.total,                   // total bayar
+            }
+          });
         }, 1500);
       }, 2000);
 
@@ -160,7 +163,6 @@ export function Payment() {
     );
   }
 
-  // ✅ Deteksi tampilan berdasarkan metode DB
   const isDompetDigital = finalMethod === 'dompet_digital';
   const isTransferBank = finalMethod === 'transfer_bank';
   const isCOD = finalMethod === 'cod';
@@ -205,7 +207,7 @@ export function Payment() {
               </div>
             </div>
 
-            {/* ✅ UI Dompet Digital → tampilkan QRIS */}
+            {/* Dompet Digital → QRIS */}
             {isDompetDigital && (
               <div className="text-center bg-white p-4 border-2 border-dashed rounded-3xl">
                 <div className="w-40 h-40 bg-gray-100 mx-auto flex items-center justify-center rounded-xl mb-2">
@@ -216,7 +218,7 @@ export function Payment() {
               </div>
             )}
 
-            {/* ✅ UI Transfer Bank → tampilkan nomor rekening */}
+            {/* Transfer Bank → nomor rekening */}
             {isTransferBank && (
               <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
                 <p className="text-[10px] text-blue-600 font-bold mb-1">NOMOR REKENING TUJUAN</p>
@@ -231,7 +233,7 @@ export function Payment() {
               </div>
             )}
 
-            {/* ✅ UI COD */}
+            {/* COD */}
             {isCOD && (
               <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
                 <p className="text-sm font-bold text-green-700">Bayar saat barang tiba 🏠</p>
