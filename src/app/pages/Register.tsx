@@ -14,6 +14,7 @@ export function Register() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
     phone: '',
     address: '',
@@ -79,15 +80,18 @@ export function Register() {
     try {
       // 1. Cek email sudah ada di tabel users
       const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', formData.email)
-        .maybeSingle();
+      .from('users')
+      .select('id, nama_user')
+      .or(`email.eq.${formData.email},nama_user.eq.${formData.username}`)
+      .maybeSingle();
 
-      if (existingUser) {
-        toast.error('Email sudah terdaftar, gunakan email lain');
-        setIsLoading(false);
-        return;
+    if (existingUser) {
+      const errorMsg = existingUser.nama_user === formData.username 
+        ? 'Username sudah digunakan' 
+        : 'Email sudah terdaftar';
+      toast.error(errorMsg);
+      setIsLoading(false);
+      return;
       }
 
       // 2. Registrasi Supabase Auth
@@ -97,6 +101,7 @@ export function Register() {
         options: {
           data: {
             full_name: formData.name,
+            username: formData.username, // Opsional: simpan di auth metadata
             role: selectedRole,
           },
           emailRedirectTo: `${window.location.origin}/login`,
@@ -114,6 +119,7 @@ export function Register() {
         .insert([{
           auth_id: authUserId,
           nama_lengkap: formData.name,
+          nama_user: formData.username, // Map ke kolom nama_user di database
           email: formData.email,
           no_telepon: formData.phone,
           peran: selectedRole,
@@ -262,6 +268,19 @@ export function Register() {
                   <Label htmlFor="phone">No. WhatsApp</Label>
                   <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} placeholder="08..." />
                 </div>
+              </div>
+
+              {/* Letakkan di dalam form, mungkin di bawah Nama Lengkap */}
+              <div className="space-y-1">
+                <Label htmlFor="username">Username *</Label>
+                <Input 
+                  id="username" 
+                  name="username" 
+                  placeholder="Contoh: yunami"
+                  value={formData.username} 
+                  onChange={handleChange} 
+                  required 
+                />
               </div>
 
               <div className="space-y-1">
