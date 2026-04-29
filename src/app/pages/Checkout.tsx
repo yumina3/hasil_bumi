@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Store, Truck, Loader2, ShoppingBag } from 'lucide-react';
+import { Store, Truck, Loader2, ShoppingBag, AlertTriangle } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
@@ -17,19 +17,23 @@ import { supabase } from '../../../utils/supabase/info';
 export function Checkout() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { 
-    cart, 
-    getTotalPrice, 
-    clearCart, 
-    deliveryMethod, 
-    setDeliveryMethod, 
-    selectedBranchId, 
-    setSelectedBranch 
+  const {
+    cart,
+    getTotalPrice,
+    clearCart,
+    deliveryMethod,
+    setDeliveryMethod,
+    selectedBranchId,
+    setSelectedBranch,
   } = useCart();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [branchList, setBranchList] = useState<any[]>([]);
+
+  const [deliveryCountToday, setDeliveryCountToday] = useState<number>(0);
+  const [isCheckingQuota, setIsCheckingQuota] = useState(false);
+  const DELIVERY_QUOTA = 100;
 
   const [formData, setFormData] = useState({
     name: user?.name || '',
@@ -39,7 +43,7 @@ export function Checkout() {
     paymentMethod: 'cod',
   });
 
-  // Fetch daftar cabang
+  // ─── Fetch cabang ────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchBranches = async () => {
       const { data } = await supabase.from('cabang').select('*');
@@ -48,13 +52,38 @@ export function Checkout() {
     fetchBranches();
   }, []);
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('id-ID', {
+  // ─── Cek kuota delivery ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (deliveryMethod !== 'delivery' || !selectedBranchId) {
+      setDeliveryCountToday(0);
+      return;
+    }
+    const checkQuota = async () => {
+      setIsCheckingQuota(true);
+      const today = new Date().toISOString().split('T')[0];
+      const { count, error } = await supabase
+        .from('pesanan')
+        .select('id', { count: 'exact', head: true })
+        .eq('cabang_id', selectedBranchId)
+        .eq('delivery_method', 'delivery')
+        .neq('status_pesanan', 'dibatalkan')
+        .gte('created_at', `${today}T00:00:00+00:00`)
+        .lte('created_at', `${today}T23:59:59+00:00`);
+      if (!error) setDeliveryCountToday(count ?? 0);
+      setIsCheckingQuota(false);
+    };
+    checkQuota();
+  }, [deliveryMethod, selectedBranchId]);
+
+  const isDeliveryFull = deliveryMethod === 'delivery' && deliveryCountToday >= DELIVERY_QUOTA;
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0,
     }).format(price);
-  };
 
   const totalPrice = getTotalPrice();
   const finalPrice = totalPrice + deliveryFee;
@@ -72,10 +101,18 @@ export function Checkout() {
     setSelectedBranch(Number(value));
   };
 
+  // ─── Helper: nama produk + berat ─────────────────────────────────────────
+  // Gabungkan nama_produk dengan selectedWeight jika ada
+  // Hasil: "Beras Merah (250 gram)" atau "Beras Merah" jika tidak ada berat
+  const getDisplayName = (item: any): string => {
+    const base = item.nama_produk || item.name || 'Produk';
+    return item.selectedWeight ? `${base} (${item.selectedWeight})` : base;
+  };
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. Validasi Input
     if (!formData.name || !formData.phone) {
       toast.error('Mohon lengkapi nama dan nomor WhatsApp');
       return;
@@ -89,22 +126,37 @@ export function Checkout() {
       return;
     }
 
+    // Double-check kuota delivery
+    if (deliveryMethod === 'delivery') {
+      const today = new Date().toISOString().split('T')[0];
+      const { count } = await supabase
+        .from('pesanan')
+        .select('id', { count: 'exact', head: true })
+        .eq('cabang_id', selectedBranchId)
+        .eq('delivery_method', 'delivery')
+        .neq('status_pesanan', 'dibatalkan')
+        .gte('created_at', `${today}T00:00:00+00:00`)
+        .lte('created_at', `${today}T23:59:59+00:00`);
+
+      if ((count ?? 0) >= DELIVERY_QUOTA) {
+        toast.error('Kuota delivery hari ini sudah penuh (100/100). Silakan pilih Pick Up.');
+        setDeliveryCountToday(count ?? 0);
+        return;
+      }
+    }
+
     setIsProcessing(true);
 
     try {
-      // 2. Generate ID yang aman untuk tipe INTEGER (maks 9 digit)
-      const orderId = Number(Date.now().toString().slice(-9)); 
+      const orderId = Number(Date.now().toString().slice(-9));
       const noInvoice = `INV/${new Date().getFullYear()}/${orderId}`;
 
-      // 3. Simpan ke Tabel Pesanan
       const { error: orderError } = await supabase
         .from('pesanan')
         .insert([{
           id: orderId,
           no_invoice: noInvoice,
-          // REVISI: Gunakan null jika user_id di DB adalah INTEGER. 
-          // Jika sudah diubah ke UUID di DB, baru ganti ke user?.id
-          user_id: null, 
+          user_id: null,
           cabang_id: selectedBranchId,
           subtotal: totalPrice,
           ongkos_kirim: deliveryFee,
@@ -121,16 +173,16 @@ export function Checkout() {
 
       if (orderError) throw orderError;
 
-      // 4. Simpan ke Tabel Detail Pesanan
-      const detailItems = cart.map(item => ({
-  pesanan_id: orderId,
-  produk_id: Number(item.id),
-  nama_produk: item.nama_produk || item.name,
-  harga_saat_beli: item.harga_jual || item.price,
-  qty: item.quantity,
-  total_harga: (item.harga_jual || item.price) * item.quantity
-}));
-      
+      // ── Simpan detail_pesanan dengan nama_produk yang sudah include berat ──
+      const detailItems = cart.map((item) => ({
+        pesanan_id: orderId,
+        produk_id: Number(item.id),
+        // nama_produk include berat jika dipilih: "Beras Merah (250 gram)"
+        nama_produk: getDisplayName(item),
+        harga_saat_beli: item.harga_jual,
+        qty: item.quantity,
+        total_harga: item.harga_jual * item.quantity,
+      }));
 
       const { error: detailError } = await supabase
         .from('detail_pesanan')
@@ -138,53 +190,41 @@ export function Checkout() {
 
       if (detailError) throw detailError;
 
-      // 5. Persiapan Data untuk Halaman Payment
       const summaryData = {
         pesanan_id: orderId,
-        noInvoice: noInvoice,
+        noInvoice,
         metode_bayar: formData.paymentMethod,
         total: finalPrice,
         deliveryMethod,
         customerName: formData.name,
-        items: cart.map(i => ({ 
-          name: i.nama_produk || i.name, 
-          qty: i.quantity, 
-          price: i.harga_jual || i.price 
-        }))
+        // items juga pakai nama yang include berat
+        items: cart.map((i) => ({
+          name: getDisplayName(i),
+          qty: i.quantity,
+          price: i.harga_jual,
+        })),
       };
 
-      // 6. Sukses & Navigasi
       toast.success('Pesanan berhasil dibuat!');
       navigate('/payment', { state: summaryData });
-      
-      // Hapus keranjang SETELAH perintah navigasi jalan
       setTimeout(() => clearCart(), 500);
-
     } catch (error: any) {
-      console.error("Detail Error:", error);
-      let userFriendlyMsg = error.message || "Terjadi kesalahan saat memproses pesanan.";
-      
+      console.error('Detail Error:', error);
+      let msg = error.message || 'Terjadi kesalahan saat memproses pesanan.';
       if (error.code === '22P02' || error.message?.includes('type integer')) {
-        userFriendlyMsg = "Format data tidak valid (ID/UUID mismatch).";
+        msg = 'Format data tidak valid (ID/UUID mismatch).';
       }
-      toast.error(userFriendlyMsg);
+      toast.error(msg);
     } finally {
       setIsProcessing(false);
     }
   };
 
-      // Gunakan useEffect untuk proteksi agar tidak tabrakan dengan proses render
-    useEffect(() => {
-      if (cart.length === 0 && !isProcessing) {
-        navigate('/cart');
-      }
-    }, [cart.length, navigate, isProcessing]);
+  useEffect(() => {
+    if (cart.length === 0 && !isProcessing) navigate('/cart');
+  }, [cart.length, navigate, isProcessing]);
 
-    // Jangan biarkan return null menghalangi render saat sedang memproses (isProcessing)
-    if (cart.length === 0 && !isProcessing) {
-      return null;
-}
-  
+  if (cart.length === 0 && !isProcessing) return null;
 
   return (
     <div className="min-h-screen py-8 bg-gray-50">
@@ -197,32 +237,81 @@ export function Checkout() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              
+
+              {/* Metode & Cabang */}
               <Card className="border-none shadow-sm">
                 <CardHeader><CardTitle className="text-lg">Metode & Cabang</CardTitle></CardHeader>
                 <CardContent className="space-y-6">
-                  <RadioGroup value={deliveryMethod} onValueChange={handleDeliveryMethodChange} className="grid grid-cols-2 gap-4">
+                  <RadioGroup
+                    value={deliveryMethod}
+                    onValueChange={handleDeliveryMethodChange}
+                    className="grid grid-cols-2 gap-4"
+                  >
                     <div className={`flex items-center space-x-2 p-3 border rounded-xl cursor-pointer ${deliveryMethod === 'pick_up' ? 'border-green-600 bg-green-50' : ''}`}>
                       <RadioGroupItem value="pick_up" id="pick_up" />
-                      <Label htmlFor="pick_up" className="flex-1 cursor-pointer font-bold text-sm">Ambil di Toko</Label>
+                      <Label htmlFor="pick_up" className="flex-1 cursor-pointer font-bold text-sm">
+                        <Store className="inline h-4 w-4 mr-1" />
+                        Ambil di Toko
+                      </Label>
                     </div>
-                    <div className={`flex items-center space-x-2 p-3 border rounded-xl cursor-pointer ${deliveryMethod === 'delivery' ? 'border-green-600 bg-green-50' : ''}`}>
-                      <RadioGroupItem value="delivery" id="delivery" />
-                      <Label htmlFor="delivery" className="flex-1 cursor-pointer font-bold text-sm">Kirim ke Alamat</Label>
+
+                    <div className={`flex items-center space-x-2 p-3 border rounded-xl transition-colors ${
+                      isDeliveryFull
+                        ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200'
+                        : deliveryMethod === 'delivery'
+                        ? 'border-green-600 bg-green-50 cursor-pointer'
+                        : 'cursor-pointer'
+                    }`}>
+                      <RadioGroupItem value="delivery" id="delivery" disabled={isDeliveryFull} />
+                      <Label
+                        htmlFor="delivery"
+                        className={`flex-1 font-bold text-sm ${isDeliveryFull ? 'cursor-not-allowed text-gray-400' : 'cursor-pointer'}`}
+                      >
+                        <Truck className="inline h-4 w-4 mr-1" />
+                        Kirim ke Alamat
+                        {isDeliveryFull && (
+                          <span className="block text-xs font-normal text-red-500 mt-0.5">
+                            Kuota penuh (100/100)
+                          </span>
+                        )}
+                      </Label>
                     </div>
                   </RadioGroup>
 
+                  {isDeliveryFull && (
+                    <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <span>
+                        Kuota delivery hari ini sudah penuh (<strong>100/100</strong>). Silakan pilih <strong>Ambil di Toko</strong> atau coba lagi besok.
+                      </span>
+                    </div>
+                  )}
+
+                  {!isDeliveryFull && deliveryMethod === 'delivery' && deliveryCountToday >= 90 && (
+                    <div className="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-700">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <span>
+                        Sisa kuota delivery hari ini: <strong>{DELIVERY_QUOTA - deliveryCountToday} slot</strong>. Segera checkout!
+                      </span>
+                    </div>
+                  )}
+
                   <Select value={selectedBranchId?.toString()} onValueChange={handleBranchChange}>
-                    <SelectTrigger className="rounded-xl"><SelectValue placeholder="Pilih cabang" /></SelectTrigger>
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Pilih cabang" />
+                    </SelectTrigger>
                     <SelectContent>
                       {branchList.map((branch) => (
-                        <SelectItem key={branch.id} value={branch.id.toString()}>{branch.nama_cabang}</SelectItem>
+                        <SelectItem key={branch.id} value={branch.id.toString()}>
+                          {branch.nama_cabang}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </CardContent>
               </Card>
 
+              {/* Data Penerima */}
               <Card className="border-none shadow-sm">
                 <CardHeader><CardTitle className="text-lg">Data Penerima</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -249,10 +338,15 @@ export function Checkout() {
                 </CardContent>
               </Card>
 
+              {/* Pembayaran */}
               <Card className="border-none shadow-sm">
                 <CardHeader><CardTitle className="text-lg">Pembayaran</CardTitle></CardHeader>
                 <CardContent>
-                  <RadioGroup value={formData.paymentMethod} onValueChange={(v) => setFormData({ ...formData, paymentMethod: v })} className="grid grid-cols-2 gap-4">
+                  <RadioGroup
+                    value={formData.paymentMethod}
+                    onValueChange={(v) => setFormData({ ...formData, paymentMethod: v })}
+                    className="grid grid-cols-2 gap-4"
+                  >
                     <div className={`p-4 border rounded-xl cursor-pointer ${formData.paymentMethod === 'cod' ? 'border-green-600 bg-green-50' : ''}`}>
                       <RadioGroupItem value="cod" id="m-cod" className="mr-2" />
                       <Label htmlFor="m-cod" className="font-bold cursor-pointer">COD (Bayar Tunai)</Label>
@@ -266,15 +360,24 @@ export function Checkout() {
               </Card>
             </div>
 
+            {/* Ringkasan */}
             <div className="lg:col-span-1">
               <Card className="sticky top-24 border-green-200 shadow-md">
-                <CardHeader className="bg-green-50"><CardTitle className="text-lg">Ringkasan</CardTitle></CardHeader>
+                <CardHeader className="bg-green-50">
+                  <CardTitle className="text-lg">Ringkasan</CardTitle>
+                </CardHeader>
                 <CardContent className="p-6 space-y-4">
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {cart.map((item) => (
-                      <div key={item.id} className="flex justify-between text-xs">
-                        <span className="text-gray-600">{item.nama_produk || item.name} (x{item.quantity})</span>
-                        <span className="font-medium">{formatPrice((item.harga_jual || item.price) * item.quantity)}</span>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {cart.map((item, idx) => (
+                      <div key={`${item.id}-${item.selectedWeight ?? idx}`} className="flex justify-between text-xs gap-2">
+                        <span className="text-gray-600 flex-1">
+                          {/* Tampilkan nama + berat di ringkasan checkout */}
+                          {getDisplayName(item)}
+                          <span className="text-gray-400 ml-1">x{item.quantity}</span>
+                        </span>
+                        <span className="font-medium shrink-0">
+                          {formatPrice(item.harga_jual * item.quantity)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -283,8 +386,18 @@ export function Checkout() {
                     <span className="font-bold">Total</span>
                     <span className="text-2xl font-bold text-green-700">{formatPrice(finalPrice)}</span>
                   </div>
-                  <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg font-bold rounded-xl" disabled={isProcessing}>
-                    {isProcessing ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : 'Konfirmasi Pesanan'}
+                  <Button
+                    type="submit"
+                    className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg font-bold rounded-xl"
+                    disabled={isProcessing || isDeliveryFull || isCheckingQuota}
+                  >
+                    {isProcessing
+                      ? <Loader2 className="animate-spin mr-2 h-5 w-5" />
+                      : isCheckingQuota
+                      ? 'Mengecek kuota...'
+                      : isDeliveryFull
+                      ? 'Kuota Delivery Penuh'
+                      : 'Konfirmasi Pesanan'}
                   </Button>
                 </CardContent>
               </Card>

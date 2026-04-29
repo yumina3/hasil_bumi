@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, CheckCircle, Box, Truck, Store, Phone, MapPin, CreditCard, Calendar } from 'lucide-react';
+import { Clock, CheckCircle, Box, Truck, Store, Phone, MapPin, CreditCard, Calendar, Package } from 'lucide-react';
 import { useAdminCabangData } from '../../context/AdminCabangContext';
 import { orderService } from '../orderService';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Alert, AlertDescription } from '../../components/ui/alert';
+import { Separator } from '../../components/ui/separator';
 import { toast } from 'sonner';
 
 export function AdminCabangOrders() {
@@ -140,6 +141,21 @@ export function AdminCabangOrders() {
           const nextAction = getNextAction(order);
           const steps = getProgressSteps(order);
           const currentIdx = steps.indexOf(order.status_pesanan);
+          const items: any[] = order.detail_pesanan || [];
+
+          // Nomor telepon: pakai no_whatsapp dari pesanan langsung,
+          // fallback ke users.no_telepon jika ada
+          const phoneNumber =
+            order.no_whatsapp ||
+            order.users?.no_telepon ||
+            '-';
+
+          // Nama penerima: pakai nama_penerima dari pesanan,
+          // fallback ke users.nama_lengkap
+          const recipientName =
+            order.nama_penerima ||
+            order.users?.nama_lengkap ||
+            'Pelanggan';
 
           return (
             <Card key={order.id} className="border-2 shadow-sm">
@@ -158,26 +174,80 @@ export function AdminCabangOrders() {
 
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="space-y-3">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Penerima</p>
+
+                  {/* ── Kolom 1: Penerima + Item Pesanan ── */}
+                  <div className="space-y-4">
+                    {/* Penerima */}
                     <div className="space-y-2">
-                      <p className="font-bold text-gray-900">{order.users?.nama_lengkap || 'Pelanggan'}</p>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Penerima</p>
+                      <p className="font-bold text-gray-900">{recipientName}</p>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Phone className="h-4 w-4" /> {order.users?.no_telepon || '-'}
+                        <Phone className="h-4 w-4 shrink-0" />
+                        <a
+                          href={`https://wa.me/${phoneNumber.replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-green-600 hover:underline transition-colors"
+                        >
+                          {phoneNumber}
+                        </a>
                       </div>
-                      <div className="flex items-start gap-2 text-sm text-gray-600">
-                        <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                        <span>{order.catatan || 'Ambil di Toko'}</span>
-                      </div>
+                      {order.delivery_method === 'delivery' && order.alamat_pengiriman && (
+                        <div className="flex items-start gap-2 text-sm text-gray-600">
+                          <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
+                          <span>{order.alamat_pengiriman}</span>
+                        </div>
+                      )}
+                      {order.catatan && (
+                        <p className="text-xs text-gray-500 italic bg-gray-50 rounded-lg px-3 py-2 border border-dashed">
+                          📝 {order.catatan}
+                        </p>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* Item Pesanan */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                        <Package className="h-3 w-3" /> Item Pesanan
+                      </p>
+                      {items.length === 0 ? (
+                        <p className="text-sm text-gray-400 italic">Tidak ada data item</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {items.map((item: any, idx: number) => (
+                            <div
+                              key={item.id ?? idx}
+                              className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2"
+                            >
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span className="h-5 w-5 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+                                  {item.qty}
+                                </span>
+                                <span className="font-medium text-gray-800 truncate">
+                                  {item.nama_produk}
+                                </span>
+                              </div>
+                              <span className="text-gray-600 text-xs shrink-0 ml-2">
+                                {formatPrice(item.total_harga)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
+                  {/* ── Kolom 2: Pembayaran ── */}
                   <div className="space-y-3">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pembayaran</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm">
                         <CreditCard className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium text-gray-700">{order.pembayaran?.metode_bayar || 'cod'}</span>
+                        <span className="font-medium text-gray-700 capitalize">
+                          {order.pembayaran?.metode_bayar || order.metode_pembayaran || 'cod'}
+                        </span>
                       </div>
                       <Badge
                         variant="outline"
@@ -194,6 +264,7 @@ export function AdminCabangOrders() {
                     </div>
                   </div>
 
+                  {/* ── Kolom 3: Kendali & Progress ── */}
                   <div className="space-y-4">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kendali Pesanan</p>
                     {nextAction ? (
@@ -223,8 +294,13 @@ export function AdminCabangOrders() {
                           </div>
                         ))}
                       </div>
+                      {/* Label step aktif */}
+                      <p className="text-[10px] text-gray-400 mt-2 text-center">
+                        {steps[currentIdx]?.replace(/_/g, ' ') ?? '-'}
+                      </p>
                     </div>
                   </div>
+
                 </div>
               </CardContent>
             </Card>

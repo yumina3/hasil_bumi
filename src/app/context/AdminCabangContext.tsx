@@ -1,7 +1,20 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { supabase } from '../../../utils/supabase/info';
 import { toast } from 'sonner';
+
+const DELIVERY_QUOTA_PER_DAY = 100;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface DetailPesanan {
+  id: number;
+  pesanan_id: number;
+  produk_id: number;
+  nama_produk: string;
+  qty: number;
+  harga_saat_beli: number;
+  total_harga: number;
+}
 
 interface Order {
   id: number;
@@ -9,12 +22,16 @@ interface Order {
   user_id: number;
   cabang_id: number;
   total_bayar: number;
-  metode_ambil: 'delivery' | 'pick_up';
+  delivery_method: 'delivery' | 'pick_up';
   status_pesanan: string;
   catatan: string;
+  no_whatsapp: string;
+  nama_penerima: string;
+  alamat_pengiriman: string;
   created_at: string;
   users?: { nama_lengkap: string; no_telepon: string };
   pembayaran?: { metode_bayar: string; status_pembayaran: string };
+  detail_pesanan?: DetailPesanan[];
 }
 
 interface AdminCabangContextType {
@@ -27,10 +44,12 @@ interface AdminCabangContextType {
   lowStockItems: number;
   newOrders: number;
   deliveryOrdersToday: number;
+  isDeliveryQuotaFull: boolean;
   isLoading: boolean;
   refreshAllData: () => Promise<void>;
 }
 
+// ─── Context ──────────────────────────────────────────────────────────────────
 const AdminCabangContext = createContext<AdminCabangContextType | undefined>(undefined);
 
 export function AdminCabangProvider({ children }: { children: ReactNode }) {
@@ -40,80 +59,170 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const cabangIdRef = useRef<number | null>(null);
+
+  // ─── Fetch semua data ──────────────────────────────────────────────────────
   const refreshAllData = async () => {
     const cid = user?.cabang_id;
-
     if (!cid) {
-      console.warn("Context: Cabang ID belum terdeteksi. User:", user);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      // 1. Ambil Stok
-      const { data: invData, error: invError } = await supabase
-        .from('stok')
-        .select(`id, jumlah_stok, threshold_stok, produk (nama_produk, sku, satuan, harga_jual)`)
-        .eq('cabang_id', cid);
-      if (invError) throw invError;
+      const [invRes, activeRes, historyRes] = await Promise.all([
+        // 1. Stok
+        supabase
+          .from('stok')
+          .select('id, jumlah_stok, threshold_stok, produk(nama_produk, sku, satuan, harga_jual)')
+          .eq('cabang_id', cid),
 
-      // 2. Ambil Pesanan Aktif
-      const { data: activeData, error: activeError } = await supabase
-        .from('pesanan')
-        .select(`*, users(nama_lengkap, no_telepon), pembayaran(metode_bayar, status_pembayaran)`)
-        .eq('cabang_id', cid)
-        .neq('status_pesanan', 'selesai')
-        .order('created_at', { ascending: false });
-      if (activeError) throw activeError;
+        // 2. Pesanan aktif — include detail_pesanan & semua kolom penerima
+        supabase
+          .from('pesanan')
+          .select(`
+            *,
+            users(nama_lengkap, no_telepon),
+            pembayaran(metode_bayar, status_pembayaran),
+            detail_pesanan(id, produk_id, nama_produk, qty, harga_saat_beli, total_harga)
+          `)
+          .eq('cabang_id', cid)
+          .not('status_pesanan', 'in', '("selesai","dibatalkan")')
+          .order('created_at', { ascending: false }),
 
-      // 3. Ambil Riwayat Pesanan
-      const { data: historyData, error: historyError } = await supabase
-        .from('pesanan')
-        .select(`*, users(nama_lengkap, no_telepon), pembayaran(metode_bayar, status_pembayaran)`)
-        .eq('cabang_id', cid)
-        .eq('status_pesanan', 'selesai')
-        .order('created_at', { ascending: false });
-      if (historyError) throw historyError;
+        // 3. Riwayat
+        supabase
+          .from('pesanan')
+          .select(`
+            *,
+            users(nama_lengkap, no_telepon),
+            pembayaran(metode_bayar, status_pembayaran),
+            detail_pesanan(id, produk_id, nama_produk, qty, harga_saat_beli, total_harga)
+          `)
+          .eq('cabang_id', cid)
+          .in('status_pesanan', ['selesai', 'dibatalkan'])
+          .order('created_at', { ascending: false }),
+      ]);
 
-      setInventory(invData || []);
-      setOrders(activeData || []);
-      setOrderHistory(historyData || []);
+      if (invRes.error) throw invRes.error;
+      if (activeRes.error) throw activeRes.error;
+      if (historyRes.error) throw historyRes.error;
+
+      setInventory(invRes.data || []);
+      setOrders(activeRes.data || []);
+      setOrderHistory(historyRes.data || []);
     } catch (err: any) {
-      console.error("Fetch Error:", err.message);
-      toast.error("Gagal memuat data: " + err.message);
+      console.error('Fetch Error:', err.message);
+      toast.error('Gagal memuat data: ' + err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (user?.cabang_id) {
-      // User sudah login dan punya cabang_id → fetch data
-      refreshAllData();
-    } else if (user && !user.cabang_id) {
-      // User login tapi tidak punya cabang_id (bukan admin cabang)
-      console.warn("User tidak memiliki cabang_id:", user);
-      setIsLoading(false);
-    } else {
-      // User belum login
-      setIsLoading(false);
+  // ─── Auto-cancel delivery jika kuota penuh ─────────────────────────────────
+  const checkAndCancelDeliveryIfFull = async (newOrder: Order) => {
+    if (newOrder.delivery_method !== 'delivery') return;
+    const cid = cabangIdRef.current;
+    if (!cid) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { count, error } = await supabase
+      .from('pesanan')
+      .select('id', { count: 'exact', head: true })
+      .eq('cabang_id', cid)
+      .eq('delivery_method', 'delivery')
+      .neq('status_pesanan', 'dibatalkan')
+      .gte('created_at', `${today}T00:00:00+00:00`)
+      .lte('created_at', `${today}T23:59:59+00:00`);
+
+    if (error) return;
+
+    if ((count ?? 0) > DELIVERY_QUOTA_PER_DAY) {
+      const { error: cancelError } = await supabase
+        .from('pesanan')
+        .update({
+          status_pesanan: 'dibatalkan',
+          catatan: `[AUTO] Dibatalkan sistem: kuota delivery harian (${DELIVERY_QUOTA_PER_DAY} pesanan) telah terpenuhi.`,
+        })
+        .eq('id', newOrder.id);
+
+      if (!cancelError) {
+        toast.warning(`Pesanan delivery ${newOrder.no_invoice} dibatalkan — kuota harian penuh.`);
+      }
     }
+  };
+
+  // ─── Realtime subscriptions ────────────────────────────────────────────────
+  useEffect(() => {
+    const cid = user?.cabang_id;
+    if (!cid) return;
+
+    cabangIdRef.current = cid;
+
+    const ordersChannel = supabase
+      .channel(`pesanan-cabang-${cid}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'pesanan', filter: `cabang_id=eq.${cid}` },
+        async (payload) => {
+          const newOrder = payload.new as Order;
+          await checkAndCancelDeliveryIfFull(newOrder);
+          await refreshAllData();
+          toast.info(`🛒 Pesanan baru: ${newOrder.no_invoice}`);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'pesanan', filter: `cabang_id=eq.${cid}` },
+        async () => { await refreshAllData(); }
+      )
+      .subscribe();
+
+    const stokChannel = supabase
+      .channel(`stok-cabang-${cid}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'stok', filter: `cabang_id=eq.${cid}` },
+        (payload) => {
+          const updated = payload.new as any;
+          setInventory((prev) =>
+            prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+      supabase.removeChannel(stokChannel);
+    };
+  }, [user?.cabang_id]);
+
+  // ─── Initial fetch ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (user?.cabang_id) refreshAllData();
+    else setIsLoading(false);
   }, [user?.id, user?.cabang_id]);
 
-  // Statistik
+  // ─── Derived stats ─────────────────────────────────────────────────────────
   const lowStockItems = inventory.filter(
-    item => item.jumlah_stok <= (item.threshold_stok ?? 0)
+    (item) => item.jumlah_stok <= (item.threshold_stok ?? 0)
   ).length;
 
   const newOrders = orders.filter(
-    o => o.status_pesanan === 'baru' || o.status_pesanan === 'new'
+    (o) => o.status_pesanan === 'baru' || o.status_pesanan === 'new'
   ).length;
 
   const today = new Date().toISOString().split('T')[0];
   const deliveryOrdersToday = [...orders, ...orderHistory].filter(
-    o => o.metode_ambil === 'delivery' && o.created_at?.startsWith(today)
+    (o) =>
+      o.delivery_method === 'delivery' &&
+      o.status_pesanan !== 'dibatalkan' &&
+      o.created_at?.startsWith(today)
   ).length;
+
+  const isDeliveryQuotaFull = deliveryOrdersToday >= DELIVERY_QUOTA_PER_DAY;
 
   return (
     <AdminCabangContext.Provider
@@ -127,6 +236,7 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
         lowStockItems,
         newOrders,
         deliveryOrdersToday,
+        isDeliveryQuotaFull,
         isLoading,
         refreshAllData,
       }}
