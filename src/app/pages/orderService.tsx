@@ -1,7 +1,15 @@
 import { supabase } from "../../../utils/supabase/info";
 
+export type OrderStatus =
+  | 'menunggu_pembayaran'
+  | 'diproses'
+  | 'dikemas'
+  | 'dikirim'
+  | 'siap_diambil'
+  | 'selesai'
+  | 'dibatalkan';
+
 export const orderService = {
-  // Ambil pesanan berdasarkan cabang_id
   async getActiveOrders(cabangId: number) {
     const { data, error } = await supabase
       .from('pesanan')
@@ -11,14 +19,14 @@ export const orderService = {
         pembayaran (metode_bayar, status_pembayaran)
       `)
       .eq('cabang_id', cabangId)
-      .neq('status_pesanan', 'selesai') // Di DB kamu: 'selesai'
+      .neq('status_pesanan', 'selesai')
+      .neq('status_pesanan', 'dibatalkan')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data;
   },
 
-  // Ambil stok dan info produk
   async getInventory(cabangId: number) {
     const { data, error } = await supabase
       .from('stok')
@@ -34,8 +42,7 @@ export const orderService = {
     return data;
   },
 
-  // Update status sesuai CHECK constraint di DB kamu
-  async updateStatus(pesananId: number, status: string) {
+  async updateStatus(pesananId: number, status: OrderStatus) {
     const { error } = await supabase
       .from('pesanan')
       .update({ status_pesanan: status })

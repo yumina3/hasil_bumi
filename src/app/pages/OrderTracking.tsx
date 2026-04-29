@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
-import { ArrowLeft, Package, CheckCircle, Truck, MapPin, Store, Clock, Loader2 } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle, Truck, MapPin, Store, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -9,21 +9,23 @@ import { supabase } from "../../../utils/supabase/info";
 
 type DeliveryMethod = 'delivery' | 'pick_up';
 
-// =============================================
-// PICKUP: 3 step
-// =============================================
 const PICKUP_STEPS = [
-  
   {
-    key: 'dikonfirmasi',
+    key: 'menunggu_pembayaran',
+    status: 'Pesanan Dibuat',
+    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi toko.',
+    icon: Package,
+  },
+  {
+    key: 'diproses',
     status: 'Pesanan Dikonfirmasi Toko',
     description: 'Pesanan telah dikonfirmasi oleh toko dan sedang disiapkan.',
     icon: CheckCircle,
   },
   {
-    key: 'dibuat',
-    status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi toko.',
+    key: 'dikemas',
+    status: 'Pesanan Sedang Dikemas',
+    description: 'Toko sedang mengemas pesanan Anda.',
     icon: Package,
   },
   {
@@ -32,24 +34,26 @@ const PICKUP_STEPS = [
     description: 'Silakan ambil pesanan Anda di toko.',
     icon: Store,
   },
-];
-
-// =============================================
-// DELIVERY: 5 step
-// =============================================
-const DELIVERY_STEPS = [
-  
   {
-    key: 'dikonfirmasi',
-    status: 'Pesanan Dikonfirmasi',
-    description: 'Pesanan telah dikonfirmasi oleh toko.',
+    key: 'selesai',
+    status: 'Pesanan Selesai',
+    description: 'Pesanan telah selesai. Terima kasih telah berbelanja!',
     icon: CheckCircle,
   },
+];
+
+const DELIVERY_STEPS = [
   {
-    key: 'dibuat',
+    key: 'menunggu_pembayaran',
     status: 'Pesanan Dibuat',
     description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi.',
     icon: Package,
+  },
+  {
+    key: 'diproses',
+    status: 'Pesanan Dikonfirmasi',
+    description: 'Pesanan telah dikonfirmasi oleh toko.',
+    icon: CheckCircle,
   },
   {
     key: 'dikemas',
@@ -71,37 +75,14 @@ const DELIVERY_STEPS = [
   },
 ];
 
-// =============================================
-// STATUS DB → INDEX STEP
-// =============================================
-const STATUS_TO_STEP_PICKUP: Record<string, number> = {
-  'menunggu_pembayaran': 0,
-  'dibayar':             0,
-  'diproses':            1, // dikonfirmasi toko
-  'siap_diambil':        2,
-  'selesai':             2,
-  'dibatalkan':          -1,
-};
-
-const STATUS_TO_STEP_DELIVERY: Record<string, number> = {
-  'menunggu_pembayaran': 0,
-  'dibayar':             0,
-  'diproses':            1, // dikonfirmasi
-  'dikemas':             2,
-  'dikirim':             3,
-  'selesai':             4,
-  'dibatalkan':          -1,
-};
-
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  'menunggu_pembayaran': { label: 'Menunggu Pembayaran', color: 'bg-yellow-500' },
-  'dibayar':             { label: 'Dibayar', color: 'bg-blue-500' },
-  'diproses':            { label: 'Diproses', color: 'bg-orange-500' },
-  'dikemas':             { label: 'Dikemas', color: 'bg-purple-500' },
-  'dikirim':             { label: 'Dalam Pengiriman', color: 'bg-indigo-500' },
-  'siap_diambil':        { label: 'Siap Diambil', color: 'bg-teal-500' },
-  'selesai':             { label: 'Selesai', color: 'bg-green-600' },
-  'dibatalkan':          { label: 'Dibatalkan', color: 'bg-red-500' },
+  menunggu_pembayaran: { label: 'Menunggu Pembayaran', color: 'bg-yellow-500' },
+  diproses:            { label: 'Dikonfirmasi',        color: 'bg-blue-600'   },
+  dikemas:             { label: 'Dikemas',             color: 'bg-purple-600' },
+  dikirim:             { label: 'Dalam Pengiriman',    color: 'bg-orange-500' },
+  siap_diambil:        { label: 'Siap Diambil',        color: 'bg-teal-500'   },
+  selesai:             { label: 'Selesai',             color: 'bg-green-600'  },
+  dibatalkan:          { label: 'Dibatalkan',          color: 'bg-red-500'    },
 };
 
 export function OrderTracking() {
@@ -122,7 +103,6 @@ export function OrderTracking() {
         return;
       }
 
-      // Fetch pesanan
       const { data: orderData, error: orderError } = await supabase
         .from('pesanan')
         .select('*')
@@ -137,7 +117,6 @@ export function OrderTracking() {
 
       setOrder(orderData);
 
-      // Fetch cabang
       if (orderData.cabang_id) {
         const { data: cabangData } = await supabase
           .from('cabang')
@@ -147,7 +126,7 @@ export function OrderTracking() {
         if (cabangData) setCabang(cabangData);
       }
 
-      // Fetch pengiriman hanya jika delivery
+      // FIXED: pakai metode_ambil bukan delivery_method
       if (orderData.delivery_method === 'delivery') {
         const { data: pengirimanData } = await supabase
           .from('pengiriman')
@@ -199,11 +178,11 @@ export function OrderTracking() {
     );
   }
 
+  // FIXED: pakai metode_ambil
   const deliveryMethod = (order.delivery_method ?? 'delivery') as DeliveryMethod;
   const isPickup = deliveryMethod === 'pick_up';
   const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
-  const statusMap = isPickup ? STATUS_TO_STEP_PICKUP : STATUS_TO_STEP_DELIVERY;
-  const currentStepIndex = statusMap[order.status_pesanan] ?? 0;
+  const currentStepIndex = steps.findIndex(s => s.key === order.status_pesanan);
   const isCancelled = order.status_pesanan === 'dibatalkan';
   const currentStatus = STATUS_LABEL[order.status_pesanan] ?? { label: order.status_pesanan, color: 'bg-gray-500' };
 
@@ -211,7 +190,6 @@ export function OrderTracking() {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto px-4 max-w-4xl">
 
-        {/* Header */}
         <div className="mb-6">
           <Link to="/orders">
             <Button variant="ghost" className="mb-4 gap-2">
@@ -232,7 +210,6 @@ export function OrderTracking() {
           </div>
         </div>
 
-        {/* Tracking Steps */}
         <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -256,11 +233,10 @@ export function OrderTracking() {
                   const Icon = step.icon;
                   const isCompleted = index <= currentStepIndex;
                   const isCurrent = index === currentStepIndex;
-                  const isDikirimStep = !isPickup && index === 3; // step "Dalam Pengiriman"
+                  const isDikirimStep = !isPickup && step.key === 'dikirim';
 
                   return (
-                    <div key={index} className="flex gap-4 pb-8 last:pb-0">
-                      {/* Icon + Garis */}
+                    <div key={step.key} className="flex gap-4 pb-8 last:pb-0">
                       <div className="relative flex flex-col items-center">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                           isCompleted
@@ -277,7 +253,6 @@ export function OrderTracking() {
                         )}
                       </div>
 
-                      {/* Konten Step */}
                       <div className="flex-1 pb-2">
                         <div className="flex items-start justify-between mb-1 flex-wrap gap-1">
                           <h3 className={`font-semibold ${isCompleted ? 'text-gray-900' : 'text-gray-400'}`}>
@@ -288,13 +263,9 @@ export function OrderTracking() {
                               </span>
                             )}
                           </h3>
-
-                          {/* Waktu dibuat */}
                           {index === 0 && order.created_at && (
                             <span className="text-xs text-gray-400">{formatDate(order.created_at)}</span>
                           )}
-
-                          {/* Info kurir di header step dikirim */}
                           {isDikirimStep && pengiriman && isCompleted && (
                             <span className="text-xs text-indigo-500 font-medium">
                               {pengiriman.nama_kurir}
@@ -307,7 +278,6 @@ export function OrderTracking() {
                           {step.description}
                         </p>
 
-                        {/* Detail pengiriman dari tabel pengiriman */}
                         {isDikirimStep && pengiriman && isCompleted && (
                           <div className="mt-3 p-3 bg-indigo-50 rounded-xl text-xs text-indigo-700 space-y-1.5">
                             <p>🚚 Kurir: <strong>{pengiriman.nama_kurir ?? '-'}</strong></p>
@@ -337,7 +307,6 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
-        {/* Info Pengambilan / Pengiriman */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>{isPickup ? 'Informasi Pengambilan' : 'Informasi Pengiriman'}</CardTitle>
@@ -379,7 +348,6 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
-        {/* Ringkasan Pembayaran */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Ringkasan Pembayaran</CardTitle>
@@ -424,7 +392,6 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
-        {/* Aksi */}
         <div className="flex gap-4">
           <Button variant="outline" className="flex-1" asChild>
             <Link to="/orders">Lihat Semua Pesanan</Link>

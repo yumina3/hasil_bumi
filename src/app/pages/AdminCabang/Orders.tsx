@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Clock, CheckCircle, Box, Truck, Store, Phone, MapPin, CreditCard,Calendar } from 'lucide-react';
+import { Clock, CheckCircle, Box, Truck, Store, Phone, MapPin, CreditCard, Calendar } from 'lucide-react';
 import { useAdminCabangData } from '../../context/AdminCabangContext';
-import { orderService } from '../orderService'; // Pastikan path benar
+import { orderService } from '../orderService';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -10,54 +10,46 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { toast } from 'sonner';
 
 export function AdminCabangOrders() {
-  // Ambil fungsi refreshAllData dari context untuk sinkronisasi ulang setelah update
   const { orders, refreshAllData } = useAdminCabangData();
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterMethod, setFilterMethod] = useState<string>('all');
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('id-ID', {
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0,
     }).format(price || 0);
-  };
 
   const handleStatusUpdate = async (orderId: number, newStatus: string) => {
     try {
-      // Gunakan service untuk update ke Supabase
-      await orderService.updateStatus(orderId, newStatus);
-      
-      const statusMessages: { [key: string]: string } = {
-        confirmed: '✓ Pesanan dikonfirmasi',
-        packing: '📦 Pesanan sedang dikemas',
-        shipping: '🚚 Pesanan sedang dikirim',
-        ready: '✓ Pesanan siap diambil',
-        completed: '🎉 Pesanan selesai',
+      await orderService.updateStatus(orderId, newStatus as any);
+      const statusMessages: Record<string, string> = {
+        diproses:     '✓ Pesanan dikonfirmasi',
+        dikemas:      '📦 Pesanan sedang dikemas',
+        dikirim:      '🚚 Pesanan sedang dikirim',
+        siap_diambil: '✓ Pesanan siap diambil',
+        selesai:      '🎉 Pesanan selesai',
       };
-
       toast.success(statusMessages[newStatus] || 'Status pesanan diupdate');
-      
-      // Refresh data global di context agar UI sinkron dengan DB
       await refreshAllData();
     } catch (error: any) {
-      toast.error("Gagal update status: " + error.message);
+      toast.error('Gagal update status: ' + error.message);
     }
   };
 
   const getStatusBadge = (status: string) => {
-    const configs: { [key: string]: { color: string; icon: any; label: string } } = {
-      menunggu_pembayaran: { color: 'bg-yellow-600', icon: Clock, label: 'Menunggu Bayar' },
-      new: { color: 'bg-blue-500', icon: Clock, label: 'Pesanan Baru' },
-      confirmed: { color: 'bg-blue-700', icon: CheckCircle, label: 'Dikonfirmasi' },
-      packing: { color: 'bg-purple-600', icon: Box, label: 'Dikemas' },
-      shipping: { color: 'bg-orange-600', icon: Truck, label: 'Dikirim' },
-      ready: { color: 'bg-green-600', icon: Store, label: 'Siap Diambil' },
+    const configs: Record<string, { color: string; icon: any; label: string }> = {
+      menunggu_pembayaran: { color: 'bg-yellow-500', icon: Clock,       label: 'Menunggu Bayar' },
+      pembayaran_lunas:    { color: 'bg-blue-400',   icon: Clock,       label: 'Lunas'          },
+      diproses:            { color: 'bg-blue-600',   icon: CheckCircle, label: 'Dikonfirmasi'   },
+      dikemas:             { color: 'bg-purple-600', icon: Box,         label: 'Dikemas'        },
+      dikirim:             { color: 'bg-orange-600', icon: Truck,       label: 'Dikirim'        },
+      siap_diambil:        { color: 'bg-teal-600',   icon: Store,       label: 'Siap Diambil'   },
+      selesai:             { color: 'bg-green-600',  icon: CheckCircle, label: 'Selesai'        },
     };
-
-    const config = configs[status] || configs['new'];
+    const config = configs[status] ?? { color: 'bg-gray-500', icon: Clock, label: status };
     const Icon = config.icon;
-
     return (
       <Badge className={`${config.color} text-white`}>
         <Icon className="h-3 w-3 mr-1" />
@@ -66,31 +58,38 @@ export function AdminCabangOrders() {
     );
   };
 
-  const getNextAction = (order: any) => {
-    // Sesuaikan dengan enum di SQL: 'pick_up' dan 'delivery'
-    if (order.metode_ambil === 'delivery') {
-      const actions: { [key: string]: { label: string; status: string } } = {
-        new: { label: 'Konfirmasi Pesanan', status: 'confirmed' },
-        confirmed: { label: 'Mulai Packing', status: 'packing' },
-        packing: { label: 'Kirim Pesanan', status: 'shipping' },
-        shipping: { label: 'Selesaikan Pesanan', status: 'completed' },
+  const getNextAction = (order: any): { label: string; status: string } | null => {
+    if (order.delivery_method === 'delivery') {
+      const actions: Record<string, { label: string; status: string }> = {
+        menunggu_pembayaran: { label: 'Konfirmasi Pesanan', status: 'diproses' },
+        pembayaran_lunas:    { label: 'Konfirmasi Pesanan', status: 'diproses' },
+        diproses:            { label: 'Mulai Packing',      status: 'dikemas'  },
+        dikemas:             { label: 'Kirim Pesanan',      status: 'dikirim'  },
+        dikirim:             { label: 'Selesaikan',         status: 'selesai'  },
       };
-      return actions[order.status_pesanan];
+      return actions[order.status_pesanan] ?? null;
     } else {
-      const actions: { [key: string]: { label: string; status: string } } = {
-        new: { label: 'Konfirmasi Pesanan', status: 'confirmed' },
-        confirmed: { label: 'Mulai Packing', status: 'packing' },
-        packing: { label: 'Siap Diambil', status: 'ready' },
-        ready: { label: 'Selesaikan Pesanan', status: 'completed' },
+      const actions: Record<string, { label: string; status: string }> = {
+        menunggu_pembayaran: { label: 'Konfirmasi Pesanan', status: 'diproses'     },
+        pembayaran_lunas:    { label: 'Konfirmasi Pesanan', status: 'diproses'     },
+        diproses:            { label: 'Mulai Packing',      status: 'dikemas'      },
+        dikemas:             { label: 'Siap Diambil',       status: 'siap_diambil' },
+        siap_diambil:        { label: 'Selesaikan',         status: 'selesai'      },
       };
-      return actions[order.status_pesanan];
+      return actions[order.status_pesanan] ?? null;
     }
   };
 
-  // Filter menggunakan kolom database: status_pesanan dan metode_ambil
-  const filteredOrders = orders.filter((order) => {
+  const getProgressSteps = (order: any): string[] => {
+    if (order.delivery_method === 'delivery') {
+      return ['menunggu_pembayaran', 'diproses', 'dikemas', 'dikirim', 'selesai'];
+    }
+    return ['menunggu_pembayaran', 'diproses', 'dikemas', 'siap_diambil', 'selesai'];
+  };
+
+  const filteredOrders = orders.filter((order: any) => {
     if (filterStatus !== 'all' && order.status_pesanan !== filterStatus) return false;
-    if (filterMethod !== 'all' && order.metode_ambil !== filterMethod) return false;
+    if (filterMethod !== 'all' && order.delivery_method !== filterMethod) return false;
     return true;
   });
 
@@ -103,21 +102,22 @@ export function AdminCabangOrders() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40 bg-white">
+            <SelectTrigger className="w-44 bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="new">Pesanan Baru</SelectItem>
-              <SelectItem value="confirmed">Dikonfirmasi</SelectItem>
-              <SelectItem value="packing">Dikemas</SelectItem>
-              <SelectItem value="shipping">Dikirim</SelectItem>
-              <SelectItem value="ready">Siap Diambil</SelectItem>
+              <SelectItem value="menunggu_pembayaran">Menunggu Bayar</SelectItem>
+              <SelectItem value="pembayaran_lunas">Lunas</SelectItem>
+              <SelectItem value="diproses">Dikonfirmasi</SelectItem>
+              <SelectItem value="dikemas">Dikemas</SelectItem>
+              <SelectItem value="dikirim">Dikirim</SelectItem>
+              <SelectItem value="siap_diambil">Siap Diambil</SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={filterMethod} onValueChange={setFilterMethod}>
-            <SelectTrigger className="w-40 bg-white">
+            <SelectTrigger className="w-44 bg-white">
               <SelectValue placeholder="Metode" />
             </SelectTrigger>
             <SelectContent>
@@ -138,6 +138,8 @@ export function AdminCabangOrders() {
       <div className="grid grid-cols-1 gap-6">
         {filteredOrders.map((order: any) => {
           const nextAction = getNextAction(order);
+          const steps = getProgressSteps(order);
+          const currentIdx = steps.indexOf(order.status_pesanan);
 
           return (
             <Card key={order.id} className="border-2 shadow-sm">
@@ -156,7 +158,6 @@ export function AdminCabangOrders() {
 
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* Customer Info - Mengambil data dari hasil join tabel users */}
                   <div className="space-y-3">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Penerima</p>
                     <div className="space-y-2">
@@ -166,21 +167,25 @@ export function AdminCabangOrders() {
                       </div>
                       <div className="flex items-start gap-2 text-sm text-gray-600">
                         <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                        <span className="leading-relaxed">{order.catatan || 'Ambil di Toko'}</span>
+                        <span>{order.catatan || 'Ambil di Toko'}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Order Payment & Total */}
                   <div className="space-y-3">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pembayaran</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm">
                         <CreditCard className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium text-gray-700">{order.pembayaran?.metode_bayar || 'Belum Bayar'}</span>
+                        <span className="font-medium text-gray-700">{order.pembayaran?.metode_bayar || 'cod'}</span>
                       </div>
-                      <Badge variant="outline" className={order.metode_ambil === 'delivery' ? 'text-orange-600 border-orange-200 bg-orange-50' : 'text-green-600 border-green-200 bg-green-50'}>
-                        {order.metode_ambil === 'delivery' ? '🚚 Delivery' : '🏪 Pick Up'}
+                      <Badge
+                        variant="outline"
+                        className={order.delivery_method === 'delivery'
+                          ? 'text-orange-600 border-orange-200 bg-orange-50'
+                          : 'text-green-600 border-green-200 bg-green-50'}
+                      >
+                        {order.delivery_method === 'delivery' ? '🚚 Delivery' : '🏪 Pick Up'}
                       </Badge>
                       <div className="pt-2">
                         <p className="text-xs text-gray-400">Total Tagihan</p>
@@ -189,31 +194,35 @@ export function AdminCabangOrders() {
                     </div>
                   </div>
 
-                  {/* Actions Area */}
                   <div className="space-y-4">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kendali Pesanan</p>
-                    {nextAction && (
+                    {nextAction ? (
                       <Button
                         onClick={() => handleStatusUpdate(order.id, nextAction.status)}
                         className="w-full bg-green-600 hover:bg-green-700 font-bold py-6 text-md shadow-md"
                       >
                         {nextAction.label}
                       </Button>
+                    ) : (
+                      <div className="flex items-center justify-center h-12 rounded-lg bg-gray-100 text-gray-400 text-sm">
+                        {order.status_pesanan === 'selesai' ? '✓ Pesanan selesai' : 'Menunggu tindakan'}
+                      </div>
                     )}
-                    
-                    {/* Visual Status Indicator */}
+
                     <div className="bg-gray-50 p-4 rounded-xl border border-dashed border-gray-300">
-                       <p className="text-[10px] font-bold text-gray-400 mb-3 uppercase">Progress</p>
-                       <div className="flex items-center w-full">
-                          {['new', 'confirmed', 'packing', order.metode_ambil === 'delivery' ? 'shipping' : 'ready', 'completed'].map((step, i, arr) => (
-                            <div key={step} className="flex items-center flex-1 last:flex-none">
-                              <div className={`h-3 w-3 rounded-full ${
-                                order.status_pesanan === step || arr.indexOf(order.status_pesanan) > i ? 'bg-green-500' : 'bg-gray-300'
-                              }`} />
-                              {i !== arr.length - 1 && <div className={`h-[2px] flex-1 ${arr.indexOf(order.status_pesanan) > i ? 'bg-green-500' : 'bg-gray-300'}`} />}
-                            </div>
-                          ))}
-                       </div>
+                      <p className="text-[10px] font-bold text-gray-400 mb-3 uppercase">Progress</p>
+                      <div className="flex items-center w-full">
+                        {steps.map((step, i) => (
+                          <div key={step} className="flex items-center flex-1 last:flex-none">
+                            <div className={`h-3 w-3 rounded-full flex-shrink-0 ${
+                              i <= currentIdx ? 'bg-green-500' : 'bg-gray-300'
+                            }`} />
+                            {i !== steps.length - 1 && (
+                              <div className={`h-[2px] flex-1 ${i < currentIdx ? 'bg-green-500' : 'bg-gray-300'}`} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

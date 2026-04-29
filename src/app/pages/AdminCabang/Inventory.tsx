@@ -1,40 +1,72 @@
-import { useState } from 'react';
-import { Package, AlertTriangle, Edit, Save, X, Plus, Minus } from 'lucide-react';
-import { useAdminCabangData } from '../../context/AdminCabangContext';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Badge } from '../../components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '../../components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { toast } from 'sonner';
+import { useState } from "react";
+import {
+  Package,
+  AlertTriangle,
+  Edit,
+  Save,
+  X,
+  Plus,
+  Minus,
+} from "lucide-react";
+import { useAdminCabangData } from "../../context/AdminCabangContext";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Badge } from "../../components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
+import { supabase } from "../../../../utils/supabase/info";
+import { toast } from "sonner";
 
 export function AdminCabangInventory() {
   const { inventory, setInventory, lowStockItems } = useAdminCabangData();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editStock, setEditStock] = useState<number>(0);
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
       minimumFractionDigits: 0,
-    }).format(price);
+    }).format(price ?? 0);
   };
 
-  const handleEditStart = (product: any) => {
-    setEditingId(product.id);
-    setEditStock(product.currentStock);
+  const handleEditStart = (item: any) => {
+    setEditingId(item.id);
+    setEditStock(item.jumlah_stok);
   };
 
-  const handleSaveStock = (productId: number) => {
-    setInventory((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, currentStock: editStock } : p))
-    );
-    setEditingId(null);
-    toast.success('Stock berhasil diupdate');
+  const handleSaveStock = async (itemId: number) => {
+    try {
+      const { error } = await supabase
+        .from("stok")
+        .update({ jumlah_stok: editStock })
+        .eq("id", itemId);
+
+      if (error) throw error;
+
+      setInventory((prev) =>
+        prev.map((p) =>
+          p.id === itemId ? { ...p, jumlah_stok: editStock } : p,
+        ),
+      );
+      setEditingId(null);
+      toast.success("Stok berhasil diupdate");
+    } catch (err: any) {
+      toast.error("Gagal update stok: " + err.message);
+    }
   };
 
   const handleCancel = () => {
@@ -42,32 +74,50 @@ export function AdminCabangInventory() {
     setEditStock(0);
   };
 
-  const handleQuickAdjust = (productId: number, amount: number) => {
-    setInventory((prev) =>
-      prev.map((p) =>
-        p.id === productId
-          ? { ...p, currentStock: Math.max(0, p.currentStock + amount) }
-          : p
-      )
-    );
-    toast.success(amount > 0 ? `+${amount} unit ditambahkan` : `${amount} unit dikurangi`);
+  const handleQuickAdjust = async (
+    itemId: number,
+    currentStock: number,
+    amount: number,
+  ) => {
+    const newStock = Math.max(0, currentStock + amount);
+    try {
+      const { error } = await supabase
+        .from("stok")
+        .update({ jumlah_stok: newStock })
+        .eq("id", itemId);
+
+      if (error) throw error;
+
+      setInventory((prev) =>
+        prev.map((p) =>
+          p.id === itemId ? { ...p, jumlah_stok: newStock } : p,
+        ),
+      );
+      toast.success(
+        amount > 0 ? `+${amount} unit ditambahkan` : `${amount} unit dikurangi`,
+      );
+    } catch (err: any) {
+      toast.error("Gagal update stok: " + err.message);
+    }
   };
 
-  // Get unique categories
-  const categories = Array.from(new Set(inventory.map((p) => p.category)));
-
   // Filter inventory
-  const filteredInventory = inventory.filter((product) => {
-    if (filterCategory !== 'all' && product.category !== filterCategory) return false;
-    if (filterStatus === 'low' && product.currentStock >= 25) return false;
-    if (filterStatus === 'out' && product.currentStock !== 0) return false;
-    if (filterStatus === 'ok' && product.currentStock < 25) return false;
+  const filteredInventory = inventory.filter((item) => {
+    const stok = item.jumlah_stok ?? 0;
+    const threshold = item.threshold_stok ?? 0;
+    if (filterStatus === "low" && !(stok > 0 && stok <= threshold))
+      return false;
+    if (filterStatus === "out" && stok !== 0) return false;
+    if (filterStatus === "ok" && stok <= threshold) return false;
     return true;
   });
 
-  // Calculate stats
-  const totalStock = inventory.reduce((sum, p) => sum + p.currentStock, 0);
-  const outOfStock = inventory.filter((p) => p.currentStock === 0).length;
+  // Stats
+  const totalStock = inventory.reduce(
+    (sum, p) => sum + (p.jumlah_stok ?? 0),
+    0,
+  );
+  const outOfStock = inventory.filter((p) => (p.jumlah_stok ?? 0) === 0).length;
 
   return (
     <div className="space-y-6">
@@ -80,9 +130,12 @@ export function AdminCabangInventory() {
       {lowStockItems > 0 && (
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-600" />
-          <AlertTitle className="text-red-800 font-bold">⚠️ LOW STOCK ALERT!</AlertTitle>
+          <AlertTitle className="text-red-800 font-bold">
+            ⚠️ LOW STOCK ALERT!
+          </AlertTitle>
           <AlertDescription className="text-red-700">
-            <strong>{lowStockItems} produk</strong> memiliki stok di bawah 25 unit. Segera lakukan restock!
+            <strong>{lowStockItems} produk</strong> memiliki stok di bawah
+            threshold. Segera lakukan restock!
           </AlertDescription>
         </Alert>
       )}
@@ -93,7 +146,9 @@ export function AdminCabangInventory() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-blue-700 font-semibold">Total Stok</p>
+                <p className="text-sm text-blue-700 font-semibold">
+                  Total Stok
+                </p>
                 <p className="text-3xl font-bold text-blue-900">{totalStock}</p>
                 <p className="text-xs text-blue-600 mt-1">Unit tersedia</p>
               </div>
@@ -106,9 +161,15 @@ export function AdminCabangInventory() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-orange-700 font-semibold">Stok Rendah</p>
-                <p className="text-3xl font-bold text-orange-900">{lowStockItems}</p>
-                <p className="text-xs text-orange-600 mt-1">Produk {"<"} 25 unit</p>
+                <p className="text-sm text-orange-700 font-semibold">
+                  Stok Rendah
+                </p>
+                <p className="text-3xl font-bold text-orange-900">
+                  {lowStockItems}
+                </p>
+                <p className="text-xs text-orange-600 mt-1">
+                  Di bawah threshold
+                </p>
               </div>
               <AlertTriangle className="h-10 w-10 text-orange-600" />
             </div>
@@ -129,22 +190,8 @@ export function AdminCabangInventory() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Filter */}
       <div className="flex items-center gap-3">
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Kategori" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Kategori</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {cat}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Status Stok" />
@@ -160,13 +207,13 @@ export function AdminCabangInventory() {
         <div className="ml-auto">
           <Alert className="bg-blue-50 border-blue-200 py-2 px-4">
             <AlertDescription className="text-blue-700 text-sm">
-              <strong>Info:</strong> Admin Cabang hanya dapat mengelola stok. Untuk edit harga, hubungi Admin Pusat.
+              <strong>Info:</strong> Untuk edit harga, hubungi Admin Pusat.
             </AlertDescription>
           </Alert>
         </div>
       </div>
 
-      {/* Inventory Table */}
+      {/* Table */}
       <Card>
         <CardHeader>
           <CardTitle>Daftar Produk</CardTitle>
@@ -178,46 +225,36 @@ export function AdminCabangInventory() {
                 <tr className="border-b-2">
                   <th className="text-left py-4 px-3">SKU</th>
                   <th className="text-left py-4 px-3">Nama Produk</th>
-                  <th className="text-left py-4 px-3">Kategori</th>
                   <th className="text-right py-4 px-3">Harga (Read-Only)</th>
                   <th className="text-center py-4 px-3">Stok Saat Ini</th>
+                  <th className="text-center py-4 px-3">Min Stok</th>
                   <th className="text-center py-4 px-3">Status</th>
                   <th className="text-center py-4 px-3">Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredInventory.map((product) => {
-                  const isEditing = editingId === product.id;
+                {filteredInventory.map((item) => {
+                  const isEditing = editingId === item.id;
+                  const stok = item.jumlah_stok ?? 0;
+                  const threshold = item.threshold_stok ?? 0;
                   const stockStatus =
-                    product.currentStock === 0
-                      ? 'out'
-                      : product.currentStock < 25
-                      ? 'low'
-                      : 'ok';
+                    stok === 0 ? "out" : stok <= threshold ? "low" : "ok";
 
                   return (
-                    <tr key={product.id} className="border-b hover:bg-gray-50">
+                    <tr key={item.id} className="border-b hover:bg-gray-50">
                       <td className="py-4 px-3">
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">
-                          {product.sku}
+                          {item.produk?.sku || "-"}
                         </code>
                       </td>
                       <td className="py-4 px-3">
-                        <div>
-                          <p className="font-medium">{product.name}</p>
-                          {product.isPerishable && (
-                            <Badge variant="outline" className="text-xs mt-1">
-                              Perishable
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-4 px-3">
-                        <span className="text-gray-600">{product.category}</span>
+                        <p className="font-medium">
+                          {item.produk?.nama_produk || "-"}
+                        </p>
                       </td>
                       <td className="py-4 px-3 text-right">
                         <span className="font-semibold text-gray-500">
-                          {formatPrice(product.price)}
+                          {formatPrice(item.produk?.harga_jual ?? 0)}
                         </span>
                       </td>
                       <td className="py-4 px-3 text-center">
@@ -226,14 +263,18 @@ export function AdminCabangInventory() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setEditStock(Math.max(0, editStock - 10))}
+                              onClick={() =>
+                                setEditStock(Math.max(0, editStock - 10))
+                              }
                             >
                               <Minus className="h-4 w-4" />
                             </Button>
                             <Input
                               type="number"
                               value={editStock}
-                              onChange={(e) => setEditStock(Number(e.target.value))}
+                              onChange={(e) =>
+                                setEditStock(Number(e.target.value))
+                              }
                               className="w-20 h-9 text-center"
                               min="0"
                             />
@@ -247,13 +288,17 @@ export function AdminCabangInventory() {
                           </div>
                         ) : (
                           <div>
-                            <span className="font-bold text-lg">{product.currentStock}</span>
-                            <span className="text-gray-500 text-sm ml-1">{product.unit}</span>
+                            <span className="font-bold text-lg">{stok}</span>
+                            <span className="text-gray-500 text-sm ml-1">
+                              {item.produk?.satuan}
+                            </span>
                             <div className="flex items-center justify-center gap-1 mt-2">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleQuickAdjust(product.id, -5)}
+                                onClick={() =>
+                                  handleQuickAdjust(item.id, stok, -5)
+                                }
                                 className="h-7 px-2"
                               >
                                 -5
@@ -261,7 +306,9 @@ export function AdminCabangInventory() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleQuickAdjust(product.id, 5)}
+                                onClick={() =>
+                                  handleQuickAdjust(item.id, stok, 5)
+                                }
                                 className="h-7 px-2"
                               >
                                 +5
@@ -269,7 +316,9 @@ export function AdminCabangInventory() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleQuickAdjust(product.id, 10)}
+                                onClick={() =>
+                                  handleQuickAdjust(item.id, stok, 10)
+                                }
                                 className="h-7 px-2"
                               >
                                 +10
@@ -278,17 +327,20 @@ export function AdminCabangInventory() {
                           </div>
                         )}
                       </td>
+                      <td className="py-4 px-3 text-center text-gray-600">
+                        {threshold}
+                      </td>
                       <td className="py-4 px-3 text-center">
-                        {stockStatus === 'out' && (
+                        {stockStatus === "out" && (
                           <Badge className="bg-red-600">❌ Habis</Badge>
                         )}
-                        {stockStatus === 'low' && (
+                        {stockStatus === "low" && (
                           <Badge className="bg-orange-600">
                             <AlertTriangle className="h-3 w-3 mr-1" />
                             Low Stock
                           </Badge>
                         )}
-                        {stockStatus === 'ok' && (
+                        {stockStatus === "ok" && (
                           <Badge className="bg-green-600">✓ Baik</Badge>
                         )}
                       </td>
@@ -298,7 +350,7 @@ export function AdminCabangInventory() {
                             <>
                               <Button
                                 size="sm"
-                                onClick={() => handleSaveStock(product.id)}
+                                onClick={() => handleSaveStock(item.id)}
                                 className="bg-green-600 hover:bg-green-700"
                               >
                                 <Save className="h-4 w-4" />
@@ -315,7 +367,7 @@ export function AdminCabangInventory() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleEditStart(product)}
+                              onClick={() => handleEditStart(item)}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -327,6 +379,11 @@ export function AdminCabangInventory() {
                 })}
               </tbody>
             </table>
+            {filteredInventory.length === 0 && (
+              <p className="text-center text-gray-500 py-8">
+                Tidak ada data inventory.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
