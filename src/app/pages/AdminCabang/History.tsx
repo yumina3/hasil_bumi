@@ -18,28 +18,18 @@ export function AdminCabangHistory() {
     }).format(price || 0);
   };
 
-  // 1. Perbaikan Filter (Menyesuaikan dengan hasil join di orderService)
+  // ✅ FIX 1: Filter pakai field yang konsisten (delivery_method, metode_pembayaran)
   const filteredOrders = orderHistory.filter((order: any) => {
-    // Di SQL kamu isinya 'pick_up' atau 'delivery'
-    if (filterMethod !== 'all' && order.metode_ambil !== filterMethod) return false;
-    
-    // Pembayaran biasanya dalam bentuk array atau objek hasil join
-    const paymentMethod = order.pembayaran?.metode_bayar || 'N/A';
-    if (filterPayment !== 'all' && paymentMethod !== filterPayment) return false;
-    
+    if (filterMethod !== 'all' && order.delivery_method !== filterMethod) return false;
+    if (filterPayment !== 'all' && order.metode_pembayaran !== filterPayment) return false;
     return true;
   });
 
-  // 2. Perbaikan Perhitungan Stats
+  // ✅ FIX 2: Stats counter pakai field yang sama dengan filter
   const totalOrders = filteredOrders.length;
   const totalRevenue = filteredOrders.reduce((sum, order) => sum + Number(order.total_bayar || 0), 0);
   const deliveryCount = filteredOrders.filter((o) => o.delivery_method === 'delivery').length;
   const pickupCount = filteredOrders.filter((o) => o.delivery_method === 'pick_up').length;
-
-  // Mendapatkan daftar metode pembayaran unik untuk filter
-  const paymentMethods = Array.from(
-    new Set(orderHistory.map((o: any) => o.pembayaran?.metode_bayar).filter(Boolean))
-  );
 
   return (
     <div className="space-y-6">
@@ -99,6 +89,7 @@ export function AdminCabangHistory() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Metode</SelectItem>
+            {/* ✅ FIX 3: value harus match dengan nilai di DB */}
             <SelectItem value="delivery">Delivery</SelectItem>
             <SelectItem value="pick_up">Pick Up</SelectItem>
           </SelectContent>
@@ -110,9 +101,9 @@ export function AdminCabangHistory() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Pembayaran</SelectItem>
-            {paymentMethods.map((method: any) => (
-              <SelectItem key={method} value={method}>{method}</SelectItem>
-            ))}
+            {/* ✅ FIX 4: Hardcode opsi COD & QRIS, bukan dynamic dari relasi */}
+            <SelectItem value="cod">COD (Tunai)</SelectItem>
+            <SelectItem value="qris">QRIS</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -135,8 +126,9 @@ export function AdminCabangHistory() {
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-green-700">{formatPrice(order.total_bayar)}</div>
-                    <Badge className={order.metode_ambil === 'delivery' ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}>
-                      {order.metode_ambil === 'delivery' ? 'Delivery' : 'Pick Up'}
+                    {/* ✅ FIX 5: Pakai delivery_method (konsisten dengan checkout) */}
+                    <Badge className={order.delivery_method === 'delivery' ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}>
+                      {order.delivery_method === 'delivery' ? 'Delivery' : 'Pick Up'}
                     </Badge>
                   </div>
                 </div>
@@ -145,13 +137,19 @@ export function AdminCabangHistory() {
               <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Informasi Pelanggan</p>
-                  <p className="font-semibold text-gray-900">{order.users?.nama_lengkap || 'Tanpa Nama'}</p>
+                  {/* ✅ FIX 6: Baca dari nama_penerima & no_whatsapp */}
+                  <p className="font-semibold text-gray-900">{order.nama_penerima || 'Tanpa Nama'}</p>
                   <div className="text-sm text-gray-600 flex items-center gap-2">
-                    <Phone className="h-4 w-4" /> {order.users?.no_telepon || '-'}
+                    <Phone className="h-4 w-4" /> {order.no_whatsapp || '-'}
                   </div>
                   <div className="text-sm text-gray-600 flex items-start gap-2">
                     <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <span>{order.catatan || 'Tidak ada catatan alamat'}</span>
+                    {/* ✅ FIX 7: Delivery tampil alamat, pick_up tampil catatan */}
+                    <span>
+                      {order.delivery_method === 'delivery'
+                        ? (order.alamat_pengiriman || 'Tidak ada alamat')
+                        : (order.catatan || 'Tidak ada catatan')}
+                    </span>
                   </div>
                 </div>
 
@@ -159,10 +157,11 @@ export function AdminCabangHistory() {
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status Pembayaran</p>
                   <div className="flex items-center gap-2 text-sm">
                     <CreditCard className="h-4 w-4 text-gray-400" />
-                    <span className="font-medium">{order.pembayaran?.metode_bayar || 'N/A'}</span>
+                    {/* ✅ FIX 8: Baca metode_pembayaran langsung dari tabel pesanan */}
+                    <span className="font-medium uppercase">{order.metode_pembayaran || 'N/A'}</span>
                   </div>
                   <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                    {order.pembayaran?.status_pembayaran || 'Selesai'}
+                    {order.status_pesanan || 'Selesai'}
                   </Badge>
                 </div>
               </CardContent>
