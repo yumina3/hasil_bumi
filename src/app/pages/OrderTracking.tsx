@@ -9,19 +9,18 @@ import { supabase } from "../../../utils/supabase/info";
 
 type DeliveryMethod = 'delivery' | 'pick_up';
 
-// Urutan tampilan: Dikonfirmasi → Dibuat → Dikemas → Siap Diambil → Selesai
 const PICKUP_STEPS = [
   {
-    key: 'diproses',
+    key: 'menunggu_pembayaran',
     status: 'Pesanan Dikonfirmasi Toko',
-    description: 'Pesanan telah dikonfirmasi oleh toko dan sedang disiapkan.',
-    icon: CheckCircle,
+    description: 'Pesanan Anda telah masuk dan menunggu konfirmasi toko.',
+    icon: Package,
   },
   {
-    key: 'menunggu_pembayaran',
+    key: 'diproses',
     status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi toko.',
-    icon: Package,
+    description: 'Pesanan telah dikonfirmasi oleh toko dan sedang disiapkan.',
+    icon: CheckCircle,
   },
   {
     key: 'dikemas',
@@ -43,19 +42,18 @@ const PICKUP_STEPS = [
   },
 ];
 
-// Urutan tampilan: Dikonfirmasi → Dibuat → Dikemas → Dikirim → Selesai
 const DELIVERY_STEPS = [
   {
-    key: 'diproses',
-    status: 'Pesanan Dikonfirmasi',
-    description: 'Pesanan telah dikonfirmasi oleh toko.',
-    icon: CheckCircle,
+    key: 'menunggu_pembayaran',
+    status: 'Pesanan Dikonfirmasi Toko',
+    description: 'Pesanan Anda telah masuk dan menunggu konfirmasi toko.',
+    icon: Package,
   },
   {
-    key: 'menunggu_pembayaran',
+    key: 'diproses',
     status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi.',
-    icon: Package,
+    description: 'Pesanan telah dikonfirmasi oleh toko.',
+    icon: CheckCircle,
   },
   {
     key: 'dikemas',
@@ -77,20 +75,17 @@ const DELIVERY_STEPS = [
   },
 ];
 
-// Mapping status → index tampilan (bukan urutan array)
-// menunggu_pembayaran → index 1 (Pesanan Dibuat), belum konfirmasi jadi Dikonfirmasi (index 0) abu-abu
-// diproses → index 0 (Dikonfirmasi), keduanya hijau
 const PICKUP_STATUS_ORDER: Record<string, number> = {
-  menunggu_pembayaran: 1,
-  diproses:            0,
+  menunggu_pembayaran: 0,
+  diproses:            1,
   dikemas:             2,
   siap_diambil:        3,
   selesai:             4,
 };
 
 const DELIVERY_STATUS_ORDER: Record<string, number> = {
-  menunggu_pembayaran: 1,
-  diproses:            0,
+  menunggu_pembayaran: 0,
+  diproses:            1,
   dikemas:             2,
   dikirim:             3,
   selesai:             4,
@@ -211,7 +206,6 @@ export function OrderTracking() {
   const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
   const statusOrder = isPickup ? PICKUP_STATUS_ORDER : DELIVERY_STATUS_ORDER;
 
-  // currentStepIndex pakai mapping manual agar logika checklist benar
   const currentStepIndex = statusOrder[order.status_pesanan] ?? -1;
 
   const isCancelled = order.status_pesanan === 'dibatalkan';
@@ -265,34 +259,12 @@ export function OrderTracking() {
               <div className="relative">
                 {steps.map((step, index) => {
                   const Icon = step.icon;
-                  // index di sini adalah posisi tampilan (0 = Dikonfirmasi, 1 = Dibuat, dst)
-                  // isCompleted: step ini hijau jika index-nya <= currentStepIndex
-                  // Khusus menunggu_pembayaran (index 1): hijau, tapi diproses (index 0) abu-abu
-                  const isCompleted = index >= currentStepIndex && currentStepIndex !== -1
-                    ? index === currentStepIndex || (currentStepIndex <= index && index <= currentStepIndex)
-                    : false;
 
-                  // Logika lebih tepat:
-                  // Step hijau jika: index-nya ADA di jalur yang sudah dilalui
-                  // Jalur: diproses(0) → menunggu(1) → dikemas(2) → dst
-                  // Saat status menunggu_pembayaran (currentStepIndex=1): step index 1 hijau, index 0 abu
-                  // Saat status diproses (currentStepIndex=0): step index 0 dan 1 hijau
-                  // Saat status dikemas (currentStepIndex=2): step 0,1,2 hijau
-                  const stepCompleted = (() => {
-                  if (currentStepIndex === -1) return false;
-                  // index 0 (Dikonfirmasi): hijau hanya jika sudah diproses atau lebih lanjut
-                  if (index === 0) return currentStepIndex === 0 || currentStepIndex >= 2;
-                  // index 1 (Dibuat): hijau hanya jika sudah dikonfirmasi (currentStepIndex 0 atau lebih lanjut)
-                  if (index === 1) return currentStepIndex === 0 || currentStepIndex >= 2;
-                  // index 2 ke atas: hijau jika currentStepIndex >= index
-                  return currentStepIndex >= index;
-                  })();
+                  // ✅ FIX: Logika stepCompleted yang benar — cukup bandingkan index dengan currentStepIndex
+                  const stepCompleted = currentStepIndex !== -1 && index <= currentStepIndex;
 
-                  const isCurrent = (() => {
-                  if (order.status_pesanan === 'menunggu_pembayaran') return index === 1;
-                  if (order.status_pesanan === 'diproses') return index === 0;
-                  return index === currentStepIndex;
-                  })();
+                  // ✅ FIX: isCurrent cukup cek index === currentStepIndex
+                  const isCurrent = index === currentStepIndex;
 
                   const isDikirimStep = !isPickup && step.key === 'dikirim';
 
