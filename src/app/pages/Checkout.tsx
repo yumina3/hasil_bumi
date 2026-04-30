@@ -162,7 +162,7 @@ export function Checkout() {
           ongkos_kirim: deliveryFee,
           total_bayar: finalPrice,
           delivery_method: deliveryMethod,
-          status_pesanan: 'menunggu_pembayaran',
+          status_pesanan: 'menunggu_konfirmasi',
           catatan: formData.catatan || null,
           metode_pembayaran: formData.paymentMethod,
           nama_penerima: formData.name,

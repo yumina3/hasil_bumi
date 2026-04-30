@@ -11,9 +11,9 @@ type DeliveryMethod = 'delivery' | 'pick_up';
 
 const PICKUP_STEPS = [
   {
-    key: 'menunggu_pembayaran',
-    status: 'Pesanan Dikonfirmasi Toko',
-    description: 'Pesanan Anda telah masuk dan menunggu konfirmasi toko.',
+    key: 'menunggu_konfirmasi',
+    status: 'Menunggu Konfirmasi Toko',
+    description: 'Pesanan Anda telah masuk dan menunggu dikonfirmasi oleh toko.',
     icon: Package,
   },
   {
@@ -44,9 +44,9 @@ const PICKUP_STEPS = [
 
 const DELIVERY_STEPS = [
   {
-    key: 'menunggu_pembayaran',
-    status: 'Pesanan Dikonfirmasi Toko',
-    description: 'Pesanan Anda telah masuk dan menunggu konfirmasi toko.',
+    key: 'menunggu_konfirmasi',
+    status: 'Menunggu Konfirmasi Toko',
+    description: 'Pesanan Anda telah masuk dan menunggu dikonfirmasi oleh toko.',
     icon: Package,
   },
   {
@@ -76,7 +76,7 @@ const DELIVERY_STEPS = [
 ];
 
 const PICKUP_STATUS_ORDER: Record<string, number> = {
-  menunggu_pembayaran: 0,
+  menunggu_konfirmasi: 0,
   diproses:            1,
   dikemas:             2,
   siap_diambil:        3,
@@ -84,7 +84,7 @@ const PICKUP_STATUS_ORDER: Record<string, number> = {
 };
 
 const DELIVERY_STATUS_ORDER: Record<string, number> = {
-  menunggu_pembayaran: 0,
+  menunggu_konfirmasi: 0,
   diproses:            1,
   dikemas:             2,
   dikirim:             3,
@@ -92,13 +92,16 @@ const DELIVERY_STATUS_ORDER: Record<string, number> = {
 };
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  menunggu_pembayaran: { label: 'Menunggu Konfirmasi', color: 'bg-yellow-500' },
-  diproses:            { label: 'Dikonfirmasi',        color: 'bg-blue-600'   },
-  dikemas:             { label: 'Dikemas',             color: 'bg-purple-600' },
-  dikirim:             { label: 'Dalam Pengiriman',    color: 'bg-orange-500' },
-  siap_diambil:        { label: 'Siap Diambil',        color: 'bg-teal-500'   },
-  selesai:             { label: 'Selesai',             color: 'bg-green-600'  },
-  dibatalkan:          { label: 'Dibatalkan',          color: 'bg-red-500'    },
+  menunggu_konfirmasi: { label: 'Menunggu Konfirmasi Toko', color: 'bg-amber-500'  },
+  menunggu_pembayaran: { label: 'Menunggu Pembayaran',      color: 'bg-yellow-500' },
+  pembayaran_lunas:    { label: 'Pembayaran Lunas',         color: 'bg-blue-400'   },
+  diproses:            { label: 'Dikonfirmasi',             color: 'bg-blue-600'   },
+  dikemas:             { label: 'Dikemas',                  color: 'bg-purple-600' },
+  dikirim:             { label: 'Dalam Pengiriman',         color: 'bg-orange-500' },
+  siap_diambil:        { label: 'Siap Diambil',             color: 'bg-teal-500'   },
+  selesai:             { label: 'Selesai',                  color: 'bg-green-600'  },
+  dibatalkan:          { label: 'Dibatalkan',               color: 'bg-red-500'    },
+  ditolak:             { label: 'Ditolak',                  color: 'bg-red-700'    },
 };
 
 export function OrderTracking() {

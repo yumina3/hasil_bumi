@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import { QrCode, CheckCircle, Clock, Copy, Loader2, CreditCard, Banknote as CashIcon, Wallet } from 'lucide-react';
+import { QrCode, CheckCircle, Clock, Copy, Loader2, Banknote as CashIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Separator } from '../components/ui/separator';
@@ -10,7 +10,7 @@ import { supabase } from '../../../utils/supabase/info';
 interface PaymentState {
   pesanan_id: string;
   noInvoice: string;
-  metode_bayar: 'dompet_digital' | 'transfer_bank' | 'cod';
+  metode_bayar: 'cod' | 'qris';
   total: number;
   deliveryMethod: string;
   customerName: string;
@@ -23,6 +23,8 @@ export function Payment() {
   const state = location.state as PaymentState;
 
   const finalMethod = state?.metode_bayar || '';
+  const isCOD = finalMethod === 'cod';
+  const isQRIS = finalMethod === 'qris';
 
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'processing' | 'success'>('pending');
   const [countdown, setCountdown] = useState(300);
@@ -33,17 +35,17 @@ export function Payment() {
   }, [state, navigate]);
 
   useEffect(() => {
-    if (finalMethod === 'cod') return;
+    if (isCOD) return;
     if (paymentStatus !== 'pending' || countdown <= 0) return;
     const timer = setInterval(() => {
       setCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
     return () => clearInterval(timer);
-  }, [paymentStatus, finalMethod, countdown]);
+  }, [paymentStatus, isCOD, countdown]);
 
-  // COD langsung konfirmasi otomatis
+  // COD langsung proses otomatis
   useEffect(() => {
-    if (finalMethod === 'cod') {
+    if (isCOD) {
       handleConfirmPayment();
     }
   }, []);
@@ -72,31 +74,18 @@ export function Payment() {
     setPaymentStatus('processing');
 
     try {
-      const isInstant = finalMethod === 'dompet_digital';
-      const isCOD = finalMethod === 'cod';
+      const paymentStatusDb = isQRIS ? 'menunggu_verifikasi' : 'pending';
 
-      const orderStatus = isInstant
-        ? 'dibayar'
-        : isCOD
-        ? 'diproses'
-        : 'menunggu_pembayaran';
-
-      const paymentStatusDb = isInstant
-        ? 'berhasil'
-        : 'pending';
-
-      // Update status pesanan
       const { error: orderError } = await supabase
         .from('pesanan')
         .update({
-          status_pesanan: orderStatus,
+          status_pesanan: 'menunggu_konfirmasi',
           updated_at: new Date().toISOString(),
         })
         .eq('id', state.pesanan_id);
 
       if (orderError) throw orderError;
 
-      // Insert ke tabel pembayaran
       const { error: payError } = await supabase
         .from('pembayaran')
         .upsert([{
@@ -104,8 +93,8 @@ export function Payment() {
           metode_bayar: finalMethod,
           status_pembayaran: paymentStatusDb,
           jumlah_bayar: state.total,
-          tgl_bayar: isInstant ? new Date().toISOString() : null,
-          gateway_ref_id: isInstant ? `REF-${state.pesanan_id}` : null,
+          tgl_bayar: null,
+          gateway_ref_id: null,
         }], { onConflict: 'pesanan_id' });
 
       if (payError) throw payError;
@@ -113,21 +102,18 @@ export function Payment() {
       setTimeout(() => {
         setPaymentStatus('success');
         toast.success(
-          isInstant
-            ? 'Pembayaran Berhasil!'
-            : isCOD
-            ? 'Pesanan Dikonfirmasi! Bayar saat barang tiba.'
-            : 'Pesanan Dibuat! Selesaikan transfer bank Anda.'
+          isCOD
+            ? 'Pesanan dibuat! Menunggu konfirmasi toko.'
+            : 'Pesanan dibuat! Tunjukkan bukti QRIS ke toko.'
         );
         setTimeout(() => {
-          // ✅ FIX: kirim semua state yang dibutuhkan OrderSuccess
           navigate('/order-success', {
             state: {
-              orderId: state.pesanan_id,           // ID angka dari DB → untuk tracking
-              noInvoice: state.noInvoice,           // string invoice → untuk display
-              paymentMethod: state.metode_bayar,    // metode bayar
-              deliveryMethod: state.deliveryMethod, // metode pengiriman
-              total: state.total,                   // total bayar
+              orderId: state.pesanan_id,
+              noInvoice: state.noInvoice,
+              paymentMethod: state.metode_bayar,
+              deliveryMethod: state.deliveryMethod,
+              total: state.total,
             }
           });
         }, 1500);
@@ -163,10 +149,6 @@ export function Payment() {
     );
   }
 
-  const isDompetDigital = finalMethod === 'dompet_digital';
-  const isTransferBank = finalMethod === 'transfer_bank';
-  const isCOD = finalMethod === 'cod';
-
   return (
     <div className="min-h-screen py-8 bg-gray-50 text-sm">
       <div className="container mx-auto px-4 max-w-md">
@@ -183,13 +165,10 @@ export function Payment() {
 
             <div className="flex justify-center mb-3">
               <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-                isDompetDigital ? 'bg-purple-50' :
-                isTransferBank  ? 'bg-blue-50' :
-                'bg-green-50'
+                isQRIS ? 'bg-purple-50' : 'bg-green-50'
               }`}>
-                {isDompetDigital && <Wallet className="h-8 w-8 text-purple-600" />}
-                {isTransferBank  && <CreditCard className="h-8 w-8 text-blue-600" />}
-                {isCOD           && <CashIcon className="h-8 w-8 text-green-600" />}
+                {isQRIS && <QrCode className="h-8 w-8 text-purple-600" />}
+                {isCOD  && <CashIcon className="h-8 w-8 text-green-600" />}
               </div>
             </div>
 
@@ -207,29 +186,14 @@ export function Payment() {
               </div>
             </div>
 
-            {/* Dompet Digital → QRIS */}
-            {isDompetDigital && (
+            {/* QRIS */}
+            {isQRIS && (
               <div className="text-center bg-white p-4 border-2 border-dashed rounded-3xl">
                 <div className="w-40 h-40 bg-gray-100 mx-auto flex items-center justify-center rounded-xl mb-2">
                   <QrCode className="h-24 w-24 text-gray-300" />
                 </div>
                 <p className="text-[10px] text-gray-400">Scan QRIS HASIL BUMI</p>
                 <p className="text-[10px] text-purple-500 mt-1">GoPay · OVO · DANA · ShopeePay</p>
-              </div>
-            )}
-
-            {/* Transfer Bank → nomor rekening */}
-            {isTransferBank && (
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
-                <p className="text-[10px] text-blue-600 font-bold mb-1">NOMOR REKENING TUJUAN</p>
-                <p className="text-[10px] text-blue-400 mb-2">Bank BCA · a/n Hasil Bumi</p>
-                <div className="flex items-center justify-center gap-2">
-                  <span className="text-xl font-black text-blue-800">1234567890</span>
-                  <Copy className="h-4 w-4 text-blue-300 cursor-pointer" onClick={() => handleCopy('1234567890')} />
-                </div>
-                <p className="text-[10px] text-orange-500 mt-3">
-                  ⚠ Kirim bukti transfer ke admin setelah bayar
-                </p>
               </div>
             )}
 
@@ -265,9 +229,7 @@ export function Payment() {
                 ? 'Memproses...'
                 : isCOD
                 ? 'Konfirmasi Pesanan'
-                : isTransferBank
-                ? 'Saya Sudah Transfer'
-                : 'Konfirmasi Pembayaran'}
+                : 'Konfirmasi Pembayaran QRIS'}
             </Button>
           </CardContent>
         </Card>

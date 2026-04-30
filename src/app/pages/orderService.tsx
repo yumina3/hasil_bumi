@@ -1,6 +1,7 @@
 import { supabase } from "../../../utils/supabase/info";
 
 export type OrderStatus =
+  | 'menunggu_konfirmasi'   
   | 'menunggu_pembayaran'
   | 'pembayaran_lunas'
   | 'diproses'
@@ -9,7 +10,7 @@ export type OrderStatus =
   | 'siap_diambil'
   | 'selesai'
   | 'dibatalkan'
-  | 'ditolak';          // ← tambahan baru
+  | 'ditolak';         
 
 export const orderService = {
   async getActiveOrders(cabangId: number) {

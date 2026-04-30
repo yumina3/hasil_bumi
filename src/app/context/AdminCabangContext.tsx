@@ -88,7 +88,7 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
             detail_pesanan(id, produk_id, nama_produk, qty, harga_saat_beli, total_harga)
           `)
           .eq('cabang_id', cid)
-          .not('status_pesanan', 'in', '("selesai","dibatalkan")')
+          .not('status_pesanan', 'in', '("selesai","dibatalkan", "ditolak")')
           .order('created_at', { ascending: false }),
 
         // 3. Riwayat
@@ -101,7 +101,7 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
             detail_pesanan(id, produk_id, nama_produk, qty, harga_saat_beli, total_harga)
           `)
           .eq('cabang_id', cid)
-          .in('status_pesanan', ['selesai', 'dibatalkan'])
+          .in('status_pesanan', ['selesai', 'dibatalkan', 'ditolak'])
           .order('created_at', { ascending: false }),
       ]);
 
@@ -211,8 +211,10 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
   ).length;
 
   const newOrders = orders.filter(
-    (o) => o.status_pesanan === 'baru' || o.status_pesanan === 'new'
-  ).length;
+  (o) => o.status_pesanan === 'menunggu_konfirmasi' ||
+         o.status_pesanan === 'menunggu_pembayaran' ||
+         o.status_pesanan === 'pembayaran_lunas'
+).length;
 
   const today = new Date().toISOString().split('T')[0];
   const deliveryOrdersToday = [...orders, ...orderHistory].filter(

@@ -83,6 +83,7 @@ export function AdminCabangOrders() {
 
   const getStatusBadge = (status: string) => {
     const configs: Record<string, { color: string; icon: any; label: string }> = {
+      menunggu_konfirmasi: { color: 'bg-amber-500', icon: Clock, label: 'Menunggu Konfirmasi' },
       menunggu_pembayaran: { color: 'bg-yellow-500', icon: Clock,       label: 'Menunggu Bayar' },
       pembayaran_lunas:    { color: 'bg-blue-400',   icon: Clock,       label: 'Lunas'          },
       diproses:            { color: 'bg-blue-600',   icon: CheckCircle, label: 'Dikonfirmasi'   },
@@ -103,7 +104,9 @@ export function AdminCabangOrders() {
   };
 
   const isNewOrder = (status: string) =>
-    status === 'menunggu_pembayaran' || status === 'pembayaran_lunas';
+  status === 'menunggu_konfirmasi' ||   // ← TAMBAH
+  status === 'menunggu_pembayaran' ||
+  status === 'pembayaran_lunas';
 
   const getNextAction = (order: any): { label: string; status: string } | null => {
     if (isNewOrder(order.status_pesanan)) return null;
@@ -151,6 +154,7 @@ export function AdminCabangOrders() {
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="menunggu_konfirmasi">Menunggu Konfirmasi</SelectItem>
               <SelectItem value="all">Semua Status</SelectItem>
               <SelectItem value="menunggu_pembayaran">Menunggu Bayar</SelectItem>
               <SelectItem value="pembayaran_lunas">Lunas</SelectItem>
