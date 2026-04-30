@@ -9,8 +9,8 @@ import { supabase } from "../../../utils/supabase/info";
 
 type DeliveryMethod = 'delivery' | 'pick_up';
 
+// Urutan tampilan: Dikonfirmasi → Dibuat → Dikemas → Siap Diambil → Selesai
 const PICKUP_STEPS = [
-  
   {
     key: 'diproses',
     status: 'Pesanan Dikonfirmasi Toko',
@@ -20,7 +20,7 @@ const PICKUP_STEPS = [
   {
     key: 'menunggu_pembayaran',
     status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat',
+    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi toko.',
     icon: Package,
   },
   {
@@ -43,6 +43,7 @@ const PICKUP_STEPS = [
   },
 ];
 
+// Urutan tampilan: Dikonfirmasi → Dibuat → Dikemas → Dikirim → Selesai
 const DELIVERY_STEPS = [
   {
     key: 'diproses',
@@ -76,8 +77,27 @@ const DELIVERY_STEPS = [
   },
 ];
 
+// Mapping status → index tampilan (bukan urutan array)
+// menunggu_pembayaran → index 1 (Pesanan Dibuat), belum konfirmasi jadi Dikonfirmasi (index 0) abu-abu
+// diproses → index 0 (Dikonfirmasi), keduanya hijau
+const PICKUP_STATUS_ORDER: Record<string, number> = {
+  menunggu_pembayaran: 1,
+  diproses:            0,
+  dikemas:             2,
+  siap_diambil:        3,
+  selesai:             4,
+};
+
+const DELIVERY_STATUS_ORDER: Record<string, number> = {
+  menunggu_pembayaran: 1,
+  diproses:            0,
+  dikemas:             2,
+  dikirim:             3,
+  selesai:             4,
+};
+
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  menunggu_pembayaran: { label: 'Menunggu Pembayaran', color: 'bg-yellow-500' },
+  menunggu_pembayaran: { label: 'Menunggu Konfirmasi', color: 'bg-yellow-500' },
   diproses:            { label: 'Dikonfirmasi',        color: 'bg-blue-600'   },
   dikemas:             { label: 'Dikemas',             color: 'bg-purple-600' },
   dikirim:             { label: 'Dalam Pengiriman',    color: 'bg-orange-500' },
@@ -91,7 +111,7 @@ export function OrderTracking() {
   const [order, setOrder] = useState<any>(null);
   const [cabang, setCabang] = useState<any>(null);
   const [pengiriman, setPengiriman] = useState<any>(null);
-  const [detailPesanan, setDetailPesanan] = useState<any[]>([]);  // ← TAMBAHAN
+  const [detailPesanan, setDetailPesanan] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -119,14 +139,12 @@ export function OrderTracking() {
 
       setOrder(orderData);
 
-      // ── Fetch detail produk ──────────────────────────────────────────────
       const { data: detailData } = await supabase
         .from('detail_pesanan')
         .select('nama_produk, qty, harga_saat_beli')
         .eq('pesanan_id', parsedId);
 
       if (detailData) setDetailPesanan(detailData);
-      // ─────────────────────────────────────────────────────────────────────
 
       if (orderData.cabang_id) {
         const { data: cabangData } = await supabase
@@ -191,11 +209,14 @@ export function OrderTracking() {
   const deliveryMethod = (order.delivery_method ?? 'delivery') as DeliveryMethod;
   const isPickup = deliveryMethod === 'pick_up';
   const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
-  const currentStepIndex = steps.findIndex(s => s.key === order.status_pesanan);
+  const statusOrder = isPickup ? PICKUP_STATUS_ORDER : DELIVERY_STATUS_ORDER;
+
+  // currentStepIndex pakai mapping manual agar logika checklist benar
+  const currentStepIndex = statusOrder[order.status_pesanan] ?? -1;
+
   const isCancelled = order.status_pesanan === 'dibatalkan';
   const currentStatus = STATUS_LABEL[order.status_pesanan] ?? { label: order.status_pesanan, color: 'bg-gray-500' };
 
-  // Total qty semua produk
   const totalQty = detailPesanan.reduce((sum, item) => sum + (item.qty ?? 0), 0);
 
   return (
@@ -244,15 +265,42 @@ export function OrderTracking() {
               <div className="relative">
                 {steps.map((step, index) => {
                   const Icon = step.icon;
-                  const isCompleted = index <= currentStepIndex;
-                  const isCurrent = index === currentStepIndex;
+                  // index di sini adalah posisi tampilan (0 = Dikonfirmasi, 1 = Dibuat, dst)
+                  // isCompleted: step ini hijau jika index-nya <= currentStepIndex
+                  // Khusus menunggu_pembayaran (index 1): hijau, tapi diproses (index 0) abu-abu
+                  const isCompleted = index >= currentStepIndex && currentStepIndex !== -1
+                    ? index === currentStepIndex || (currentStepIndex <= index && index <= currentStepIndex)
+                    : false;
+
+                  // Logika lebih tepat:
+                  // Step hijau jika: index-nya ADA di jalur yang sudah dilalui
+                  // Jalur: diproses(0) → menunggu(1) → dikemas(2) → dst
+                  // Saat status menunggu_pembayaran (currentStepIndex=1): step index 1 hijau, index 0 abu
+                  // Saat status diproses (currentStepIndex=0): step index 0 dan 1 hijau
+                  // Saat status dikemas (currentStepIndex=2): step 0,1,2 hijau
+                  const stepCompleted = (() => {
+                  if (currentStepIndex === -1) return false;
+                  // index 0 (Dikonfirmasi): hijau hanya jika sudah diproses atau lebih lanjut
+                  if (index === 0) return currentStepIndex === 0 || currentStepIndex >= 2;
+                  // index 1 (Dibuat): hijau hanya jika sudah dikonfirmasi (currentStepIndex 0 atau lebih lanjut)
+                  if (index === 1) return currentStepIndex === 0 || currentStepIndex >= 2;
+                  // index 2 ke atas: hijau jika currentStepIndex >= index
+                  return currentStepIndex >= index;
+                  })();
+
+                  const isCurrent = (() => {
+                  if (order.status_pesanan === 'menunggu_pembayaran') return index === 1;
+                  if (order.status_pesanan === 'diproses') return index === 0;
+                  return index === currentStepIndex;
+                  })();
+
                   const isDikirimStep = !isPickup && step.key === 'dikirim';
 
                   return (
                     <div key={step.key} className="flex gap-4 pb-8 last:pb-0">
                       <div className="relative flex flex-col items-center">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                          isCompleted
+                          stepCompleted
                             ? 'bg-green-600 text-white shadow-md shadow-green-200'
                             : 'bg-gray-100 text-gray-400'
                         } ${isCurrent ? 'ring-4 ring-green-100' : ''}`}>
@@ -260,7 +308,7 @@ export function OrderTracking() {
                         </div>
                         {index < steps.length - 1 && (
                           <div
-                            className={`w-0.5 flex-1 mt-2 ${isCompleted ? 'bg-green-500' : 'bg-gray-200'}`}
+                            className={`w-0.5 flex-1 mt-2 ${stepCompleted ? 'bg-green-500' : 'bg-gray-200'}`}
                             style={{ minHeight: '40px' }}
                           />
                         )}
@@ -268,7 +316,7 @@ export function OrderTracking() {
 
                       <div className="flex-1 pb-2">
                         <div className="flex items-start justify-between mb-1 flex-wrap gap-1">
-                          <h3 className={`font-semibold ${isCompleted ? 'text-gray-900' : 'text-gray-400'}`}>
+                          <h3 className={`font-semibold ${stepCompleted ? 'text-gray-900' : 'text-gray-400'}`}>
                             {step.status}
                             {isCurrent && (
                               <span className="ml-2 text-xs font-normal text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
@@ -276,10 +324,10 @@ export function OrderTracking() {
                               </span>
                             )}
                           </h3>
-                          {index === 0 && order.created_at && (
+                          {step.key === 'menunggu_pembayaran' && order.created_at && (
                             <span className="text-xs text-gray-400">{formatDate(order.created_at)}</span>
                           )}
-                          {isDikirimStep && pengiriman && isCompleted && (
+                          {isDikirimStep && pengiriman && stepCompleted && (
                             <span className="text-xs text-indigo-500 font-medium">
                               {pengiriman.nama_kurir}
                               {pengiriman.no_resi_lokal ? ` · ${pengiriman.no_resi_lokal}` : ''}
@@ -287,11 +335,11 @@ export function OrderTracking() {
                           )}
                         </div>
 
-                        <p className={`text-sm ${isCompleted ? 'text-gray-600' : 'text-gray-400'}`}>
+                        <p className={`text-sm ${stepCompleted ? 'text-gray-600' : 'text-gray-400'}`}>
                           {step.description}
                         </p>
 
-                        {isDikirimStep && pengiriman && isCompleted && (
+                        {isDikirimStep && pengiriman && stepCompleted && (
                           <div className="mt-3 p-3 bg-indigo-50 rounded-xl text-xs text-indigo-700 space-y-1.5">
                             <p>🚚 Kurir: <strong>{pengiriman.nama_kurir ?? '-'}</strong></p>
                             {pengiriman.no_resi_lokal && (
@@ -320,7 +368,7 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
-        {/* ── DETAIL PRODUK (TAMBAHAN) ── */}
+        {/* ── Detail Produk ── */}
         {detailPesanan.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
@@ -336,12 +384,10 @@ export function OrderTracking() {
                 {detailPesanan.map((item, idx) => (
                   <div key={idx} className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      {/* Badge qty */}
                       <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700 shrink-0">
                         {item.qty}
                       </div>
                       <div>
-                        {/* nama_produk sudah include berat: "Kubis (250 gram)" */}
                         <p className="text-sm font-semibold text-gray-800">{item.nama_produk}</p>
                         <p className="text-xs text-gray-400">{formatPrice(item.harga_saat_beli)} / satuan</p>
                       </div>
@@ -355,7 +401,6 @@ export function OrderTracking() {
 
               <Separator className="my-4" />
 
-              {/* Total qty semua produk */}
               <div className="flex justify-between items-center text-sm">
                 <span className="text-gray-500">Total item dibeli</span>
                 <span className="font-semibold text-gray-800">{totalQty} item</span>
@@ -363,7 +408,6 @@ export function OrderTracking() {
             </CardContent>
           </Card>
         )}
-        {/* ── END DETAIL PRODUK ── */}
 
         {/* ── Informasi Pengambilan/Pengiriman ── */}
         <Card className="mb-6">
