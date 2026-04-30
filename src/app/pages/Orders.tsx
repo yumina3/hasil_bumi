@@ -1,7 +1,10 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { Package, Clock, Truck, CheckCircle, MapPin, Loader2, Store, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Package, Clock, Truck, CheckCircle, MapPin, Loader2, Store,
+  ChevronDown, ChevronUp, XCircle, AlertCircle, ThumbsUp,
+} from 'lucide-react';
 import { supabase } from '../../../utils/supabase/info';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -25,11 +28,12 @@ interface Order {
   total_bayar: number;
   metode_pembayaran: string;
   delivery_method: string;
+  alasan_penolakan?: string;
   detail_pesanan: DetailPesanan[];
 }
 
 export function Orders() {
-  const [orders, setOrders]     = useState<Order[]>([]);
+  const [orders, setOrders]       = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => { fetchOrders(); }, []);
@@ -47,6 +51,7 @@ export function Orders() {
           total_bayar,
           metode_pembayaran,
           delivery_method,
+          alasan_penolakan,
           detail_pesanan(id, qty, nama_produk, harga_saat_beli, total_harga)
         `)
         .order('created_at', { ascending: false });
@@ -69,13 +74,15 @@ export function Orders() {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { icon: any; color: string; label: string }> = {
       menunggu_pembayaran: { icon: Clock,       color: 'bg-yellow-500', label: 'Menunggu Pembayaran' },
+      pembayaran_lunas:    { icon: Clock,       color: 'bg-blue-400',   label: 'Menunggu Konfirmasi' },
       dibayar:             { icon: CheckCircle, color: 'bg-blue-500',   label: 'Dibayar'             },
-      diproses:            { icon: Clock,       color: 'bg-orange-500', label: 'Diproses'            },
+      diproses:            { icon: CheckCircle, color: 'bg-green-500',  label: 'Diterima & Diproses' },
       dikemas:             { icon: Package,     color: 'bg-purple-500', label: 'Dikemas'             },
       dikirim:             { icon: Truck,       color: 'bg-indigo-500', label: 'Dalam Pengiriman'    },
       siap_diambil:        { icon: Store,       color: 'bg-teal-500',   label: 'Siap Diambil'        },
       selesai:             { icon: CheckCircle, color: 'bg-green-600',  label: 'Selesai'             },
-      dibatalkan:          { icon: Clock,       color: 'bg-red-500',    label: 'Dibatalkan'          },
+      dibatalkan:          { icon: XCircle,     color: 'bg-gray-500',   label: 'Dibatalkan'          },
+      ditolak:             { icon: XCircle,     color: 'bg-red-500',    label: 'Ditolak'             },
     };
     const config = variants[status] || { icon: Clock, color: 'bg-gray-500', label: status };
     const Icon = config.icon;
@@ -86,8 +93,16 @@ export function Orders() {
     );
   };
 
-  const ongoingOrders   = orders.filter(o => o.status_pesanan !== 'selesai' && o.status_pesanan !== 'dibatalkan');
-  const completedOrders = orders.filter(o => o.status_pesanan === 'selesai' || o.status_pesanan === 'dibatalkan');
+  // Pesanan masih menunggu konfirmasi admin (belum diterima/ditolak)
+  const isWaitingConfirmation = (status: string) =>
+    status === 'menunggu_pembayaran' || status === 'pembayaran_lunas';
+
+  // Pesanan sudah ditolak
+  const isRejected = (status: string) => status === 'ditolak';
+
+  const ongoingOrders   = orders.filter(o => o.status_pesanan !== 'selesai' && o.status_pesanan !== 'dibatalkan' && o.status_pesanan !== 'ditolak');
+  const rejectedOrders  = orders.filter(o => o.status_pesanan === 'ditolak' || o.status_pesanan === 'dibatalkan');
+  const completedOrders = orders.filter(o => o.status_pesanan === 'selesai');
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -107,24 +122,57 @@ export function Orders() {
         </div>
 
         <Tabs defaultValue="ongoing" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="ongoing">Sedang Berlangsung ({ongoingOrders.length})</TabsTrigger>
+          <TabsList className="grid w-full max-w-xl grid-cols-3">
+            <TabsTrigger value="ongoing">Berlangsung ({ongoingOrders.length})</TabsTrigger>
             <TabsTrigger value="completed">Selesai ({completedOrders.length})</TabsTrigger>
+            <TabsTrigger value="rejected">Ditolak ({rejectedOrders.length})</TabsTrigger>
           </TabsList>
 
+          {/* Tab: Sedang Berlangsung */}
           <TabsContent value="ongoing" className="mt-6 space-y-4">
             {ongoingOrders.length === 0
               ? <EmptyState title="Tidak ada pesanan aktif" sub="Yuk belanja sekarang!" />
               : ongoingOrders.map(order => (
-                  <OrderCard key={order.id} order={order} formatDate={formatDate} formatPrice={formatPrice} getStatusBadge={getStatusBadge} />
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    formatDate={formatDate}
+                    formatPrice={formatPrice}
+                    getStatusBadge={getStatusBadge}
+                    isWaitingConfirmation={isWaitingConfirmation(order.status_pesanan)}
+                  />
                 ))}
           </TabsContent>
 
+          {/* Tab: Selesai */}
           <TabsContent value="completed" className="mt-6 space-y-4">
             {completedOrders.length === 0
               ? <EmptyState title="Belum ada pesanan selesai" sub="Pesanan selesai akan muncul di sini" isCompleted />
               : completedOrders.map(order => (
-                  <OrderCard key={order.id} order={order} formatDate={formatDate} formatPrice={formatPrice} getStatusBadge={getStatusBadge} isCompleted />
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    formatDate={formatDate}
+                    formatPrice={formatPrice}
+                    getStatusBadge={getStatusBadge}
+                    isCompleted
+                  />
+                ))}
+          </TabsContent>
+
+          {/* Tab: Ditolak/Dibatalkan */}
+          <TabsContent value="rejected" className="mt-6 space-y-4">
+            {rejectedOrders.length === 0
+              ? <EmptyState title="Tidak ada pesanan ditolak" sub="Pesanan yang ditolak akan tampil di sini" isRejected />
+              : rejectedOrders.map(order => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    formatDate={formatDate}
+                    formatPrice={formatPrice}
+                    getStatusBadge={getStatusBadge}
+                    isRejected
+                  />
                 ))}
           </TabsContent>
         </Tabs>
@@ -133,19 +181,35 @@ export function Orders() {
   );
 }
 
-function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted }: {
+function OrderCard({
+  order,
+  formatDate,
+  formatPrice,
+  getStatusBadge,
+  isCompleted,
+  isRejected,
+  isWaitingConfirmation,
+}: {
   order: Order;
   formatDate: (d: string) => string;
   formatPrice: (p: number) => string;
   getStatusBadge: (s: string) => React.ReactNode;
   isCompleted?: boolean;
+  isRejected?: boolean;
+  isWaitingConfirmation?: boolean;
 }) {
   const [showItems, setShowItems] = useState(false);
-  const items = order.detail_pesanan || [];
+  const items    = order.detail_pesanan || [];
   const totalQty = items.reduce((sum, item) => sum + (item.qty || 0), 0);
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className={`hover:shadow-md transition-shadow ${
+      isRejected
+        ? 'border-red-200 bg-red-50/30'
+        : isWaitingConfirmation
+        ? 'border-yellow-300 bg-yellow-50/30'
+        : ''
+    }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>
@@ -157,6 +221,52 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
       </CardHeader>
 
       <CardContent className="space-y-4">
+
+        {/* ── Banner: Menunggu Konfirmasi Admin ── */}
+        {isWaitingConfirmation && (
+          <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-yellow-800">Menunggu Konfirmasi Toko</p>
+              <p className="text-xs text-yellow-600 mt-0.5">
+                Pesanan Anda sedang ditinjau oleh admin. Anda akan mendapat notifikasi setelah pesanan diterima atau ditolak.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Banner: Pesanan Diterima (status diproses) ── */}
+        {order.status_pesanan === 'diproses' && (
+          <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+            <ThumbsUp className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-green-800">Pesanan Diterima! 🎉</p>
+              <p className="text-xs text-green-600 mt-0.5">
+                Admin telah menerima pesanan Anda dan sedang menyiapkannya.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Banner: Pesanan Ditolak ── */}
+        {isRejected && order.status_pesanan === 'ditolak' && (
+          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <XCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-800">Pesanan Ditolak</p>
+              <p className="text-xs text-red-600 mt-0.5 mb-2">
+                Mohon maaf, pesanan Anda tidak dapat diproses oleh toko.
+              </p>
+              {order.alasan_penolakan && (
+                <div className="bg-white border border-red-200 rounded-lg px-3 py-2">
+                  <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Alasan</p>
+                  <p className="text-sm text-red-700">{order.alasan_penolakan}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Info ringkas */}
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
@@ -179,7 +289,7 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
           </div>
         </div>
 
-        {/* ── Toggle detail item ── */}
+        {/* Toggle detail item */}
         {items.length > 0 && (
           <div>
             <button
@@ -195,12 +305,10 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
                 {items.map((item, idx) => (
                   <div key={item.id ?? idx} className="flex items-center justify-between px-4 py-3 border-b last:border-0">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {/* Badge qty */}
                       <span className="h-6 w-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
                         {item.qty}
                       </span>
                       <div className="min-w-0">
-                        {/* nama_produk sudah include berat: "Beras Merah (250 gram)" */}
                         <p className="text-sm font-medium text-gray-800 truncate">{item.nama_produk}</p>
                         <p className="text-xs text-gray-400">{formatPrice(item.harga_saat_beli)} / satuan</p>
                       </div>
@@ -223,15 +331,38 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
 
         {/* Tombol aksi */}
         <div className="flex gap-2">
-          <Link to={`/order-tracking/${order.id}`} className="flex-1">
-            <Button variant="outline" className="w-full">
-              {isCompleted ? 'Lihat Detail' : <><MapPin className="h-4 w-4 mr-2" />Lacak Pesanan</>}
-            </Button>
-          </Link>
+          {/* Tombol Lacak hanya muncul jika pesanan sudah diterima (bukan menunggu atau ditolak) */}
+          {!isWaitingConfirmation && !isRejected && (
+            <Link to={`/order-tracking/${order.id}`} className="flex-1">
+              <Button variant="outline" className="w-full">
+                {isCompleted
+                  ? 'Lihat Detail'
+                  : <><MapPin className="h-4 w-4 mr-2" />Lacak Pesanan</>}
+              </Button>
+            </Link>
+          )}
+
+          {/* Jika ditolak: tombol belanja lagi saja */}
+          {isRejected && (
+            <Link to="/produk" className="flex-1">
+              <Button className="w-full bg-green-600 hover:bg-green-700">
+                Belanja Lagi
+              </Button>
+            </Link>
+          )}
+
+          {/* Jika selesai: tambahkan tombol belanja lagi */}
           {isCompleted && (
             <Link to="/produk" className="flex-1">
               <Button className="w-full bg-green-600 hover:bg-green-700">Beli Lagi</Button>
             </Link>
+          )}
+
+          {/* Jika masih menunggu: tampilkan info saja */}
+          {isWaitingConfirmation && (
+            <div className="flex-1 flex items-center justify-center h-10 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm font-medium">
+              ⏳ Menunggu konfirmasi toko
+            </div>
           )}
         </div>
       </CardContent>
@@ -239,16 +370,22 @@ function OrderCard({ order, formatDate, formatPrice, getStatusBadge, isCompleted
   );
 }
 
-function EmptyState({ title, sub, isCompleted }: { title: string; sub: string; isCompleted?: boolean }) {
+function EmptyState({
+  title, sub, isCompleted, isRejected,
+}: {
+  title: string; sub: string; isCompleted?: boolean; isRejected?: boolean;
+}) {
   return (
     <Card>
       <CardContent className="py-12 text-center">
-        {isCompleted
+        {isRejected
+          ? <XCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          : isCompleted
           ? <CheckCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           : <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />}
         <h3 className="font-semibold text-lg mb-2">{title}</h3>
         <p className="text-gray-600 mb-6">{sub}</p>
-        {!isCompleted && (
+        {!isCompleted && !isRejected && (
           <Link to="/produk">
             <Button className="bg-green-600 hover:bg-green-700">Mulai Belanja</Button>
           </Link>

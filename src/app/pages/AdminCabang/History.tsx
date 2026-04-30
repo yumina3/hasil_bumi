@@ -33,8 +33,8 @@ export function AdminCabangHistory() {
   // 2. Perbaikan Perhitungan Stats
   const totalOrders = filteredOrders.length;
   const totalRevenue = filteredOrders.reduce((sum, order) => sum + Number(order.total_bayar || 0), 0);
-  const deliveryCount = filteredOrders.filter((o) => o.metode_ambil === 'delivery').length;
-  const pickupCount = filteredOrders.filter((o) => o.metode_ambil === 'pick_up').length;
+  const deliveryCount = filteredOrders.filter((o) => o.delivery_method === 'delivery').length;
+  const pickupCount = filteredOrders.filter((o) => o.delivery_method === 'pick_up').length;
 
   // Mendapatkan daftar metode pembayaran unik untuk filter
   const paymentMethods = Array.from(

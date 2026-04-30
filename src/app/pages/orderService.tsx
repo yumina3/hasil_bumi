@@ -2,12 +2,14 @@ import { supabase } from "../../../utils/supabase/info";
 
 export type OrderStatus =
   | 'menunggu_pembayaran'
+  | 'pembayaran_lunas'
   | 'diproses'
   | 'dikemas'
   | 'dikirim'
   | 'siap_diambil'
   | 'selesai'
-  | 'dibatalkan';
+  | 'dibatalkan'
+  | 'ditolak';          // ← tambahan baru
 
 export const orderService = {
   async getActiveOrders(cabangId: number) {
@@ -49,5 +51,18 @@ export const orderService = {
       .eq('id', pesananId);
 
     if (error) throw error;
-  }
+  },
+
+  // ← method baru: tolak pesanan + simpan alasan
+  async rejectOrder(pesananId: number, alasanPenolakan: string) {
+    const { error } = await supabase
+      .from('pesanan')
+      .update({
+        status_pesanan:   'ditolak',
+        alasan_penolakan: alasanPenolakan,
+      })
+      .eq('id', pesananId);
+
+    if (error) throw error;
+  },
 };
