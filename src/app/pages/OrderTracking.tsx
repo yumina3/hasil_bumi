@@ -10,17 +10,18 @@ import { supabase } from "../../../utils/supabase/info";
 type DeliveryMethod = 'delivery' | 'pick_up';
 
 const PICKUP_STEPS = [
-  {
-    key: 'menunggu_pembayaran',
-    status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi toko.',
-    icon: Package,
-  },
+  
   {
     key: 'diproses',
     status: 'Pesanan Dikonfirmasi Toko',
     description: 'Pesanan telah dikonfirmasi oleh toko dan sedang disiapkan.',
     icon: CheckCircle,
+  },
+  {
+    key: 'menunggu_pembayaran',
+    status: 'Pesanan Dibuat',
+    description: 'Pesanan Anda telah dibuat',
+    icon: Package,
   },
   {
     key: 'dikemas',
@@ -44,16 +45,16 @@ const PICKUP_STEPS = [
 
 const DELIVERY_STEPS = [
   {
-    key: 'menunggu_pembayaran',
-    status: 'Pesanan Dibuat',
-    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi.',
-    icon: Package,
-  },
-  {
     key: 'diproses',
     status: 'Pesanan Dikonfirmasi',
     description: 'Pesanan telah dikonfirmasi oleh toko.',
     icon: CheckCircle,
+  },
+  {
+    key: 'menunggu_pembayaran',
+    status: 'Pesanan Dibuat',
+    description: 'Pesanan Anda telah dibuat dan menunggu konfirmasi.',
+    icon: Package,
   },
   {
     key: 'dikemas',
