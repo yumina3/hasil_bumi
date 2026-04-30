@@ -90,6 +90,7 @@ export function OrderTracking() {
   const [order, setOrder] = useState<any>(null);
   const [cabang, setCabang] = useState<any>(null);
   const [pengiriman, setPengiriman] = useState<any>(null);
+  const [detailPesanan, setDetailPesanan] = useState<any[]>([]);  // ← TAMBAHAN
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -117,6 +118,15 @@ export function OrderTracking() {
 
       setOrder(orderData);
 
+      // ── Fetch detail produk ──────────────────────────────────────────────
+      const { data: detailData } = await supabase
+        .from('detail_pesanan')
+        .select('nama_produk, qty, harga_saat_beli')
+        .eq('pesanan_id', parsedId);
+
+      if (detailData) setDetailPesanan(detailData);
+      // ─────────────────────────────────────────────────────────────────────
+
       if (orderData.cabang_id) {
         const { data: cabangData } = await supabase
           .from('cabang')
@@ -126,7 +136,6 @@ export function OrderTracking() {
         if (cabangData) setCabang(cabangData);
       }
 
-      // FIXED: pakai metode_ambil bukan delivery_method
       if (orderData.delivery_method === 'delivery') {
         const { data: pengirimanData } = await supabase
           .from('pengiriman')
@@ -178,13 +187,15 @@ export function OrderTracking() {
     );
   }
 
-  // FIXED: pakai metode_ambil
   const deliveryMethod = (order.delivery_method ?? 'delivery') as DeliveryMethod;
   const isPickup = deliveryMethod === 'pick_up';
   const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
   const currentStepIndex = steps.findIndex(s => s.key === order.status_pesanan);
   const isCancelled = order.status_pesanan === 'dibatalkan';
   const currentStatus = STATUS_LABEL[order.status_pesanan] ?? { label: order.status_pesanan, color: 'bg-gray-500' };
+
+  // Total qty semua produk
+  const totalQty = detailPesanan.reduce((sum, item) => sum + (item.qty ?? 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -210,6 +221,7 @@ export function OrderTracking() {
           </div>
         </div>
 
+        {/* ── Status Tracking ── */}
         <Card className="mb-6">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -307,6 +319,52 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
+        {/* ── DETAIL PRODUK (TAMBAHAN) ── */}
+        {detailPesanan.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Detail Produk</CardTitle>
+                <span className="text-xs text-gray-400 font-normal">
+                  {detailPesanan.length} produk · {totalQty} item
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {detailPesanan.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      {/* Badge qty */}
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700 shrink-0">
+                        {item.qty}
+                      </div>
+                      <div>
+                        {/* nama_produk sudah include berat: "Kubis (250 gram)" */}
+                        <p className="text-sm font-semibold text-gray-800">{item.nama_produk}</p>
+                        <p className="text-xs text-gray-400">{formatPrice(item.harga_saat_beli)} / satuan</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-800 shrink-0">
+                      {formatPrice(item.harga_saat_beli * item.qty)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <Separator className="my-4" />
+
+              {/* Total qty semua produk */}
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500">Total item dibeli</span>
+                <span className="font-semibold text-gray-800">{totalQty} item</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {/* ── END DETAIL PRODUK ── */}
+
+        {/* ── Informasi Pengambilan/Pengiriman ── */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>{isPickup ? 'Informasi Pengambilan' : 'Informasi Pengiriman'}</CardTitle>
@@ -348,6 +406,7 @@ export function OrderTracking() {
           </CardContent>
         </Card>
 
+        {/* ── Ringkasan Pembayaran ── */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle>Ringkasan Pembayaran</CardTitle>
