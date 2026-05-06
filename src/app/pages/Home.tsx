@@ -64,7 +64,7 @@ export function Home() {
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <MapPin className="h-5 w-5" />
-                <span className="font-semibold">Smart Branch Selection</span>
+                <span className="font-semibold">Pilih Cabang Terdekat Anda</span>
               </div>
               <div className="flex items-center gap-4 w-full md:w-auto">
                 <Select
