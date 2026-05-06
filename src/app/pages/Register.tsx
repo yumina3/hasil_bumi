@@ -47,51 +47,50 @@ export function Register() {
     fetchCabang();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+
+    if (isLoading) return; // ← guard double submit
 
     if (selectedRole === 'pelanggan' && !formData.address) {
       toast.error('Alamat utama wajib diisi untuk pelanggan');
-      setIsLoading(false);
       return;
     }
 
     if (selectedRole === 'admin_cabang' && !selectedCabangId) {
       toast.error('Pilih cabang terlebih dahulu');
-      setIsLoading(false);
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
       toast.error('Password tidak cocok');
-      setIsLoading(false);
       return;
     }
 
     if (formData.password.length < 6) {
       toast.error('Password minimal 6 karakter');
-      setIsLoading(false);
       return;
     }
 
+    setIsLoading(true);
     let authUserId: string | null = null;
 
     try {
-      // 1. Cek email sudah ada di tabel users
+      // 1. Cek duplikat email/username di public.users
       const { data: existingUser } = await supabase
-      .from('users')
-      .select('id, nama_user')
-      .or(`email.eq.${formData.email},nama_user.eq.${formData.username}`)
-      .maybeSingle();
+        .from('users')
+        .select('id, nama_user, email')
+        .or(`email.eq.${formData.email},nama_user.eq.${formData.username}`)
+        .maybeSingle();
 
-    if (existingUser) {
-      const errorMsg = existingUser.nama_user === formData.username 
-        ? 'Username sudah digunakan' 
-        : 'Email sudah terdaftar';
-      toast.error(errorMsg);
-      setIsLoading(false);
-      return;
+      if (existingUser) {
+        if (existingUser.nama_user === formData.username) {
+          toast.error('Username sudah digunakan, coba username lain');
+        } else {
+          toast.error('Email sudah terdaftar, gunakan email lain');
+        }
+        setIsLoading(false);
+        return;
       }
 
       // 2. Registrasi Supabase Auth
@@ -101,7 +100,7 @@ export function Register() {
         options: {
           data: {
             full_name: formData.name,
-            username: formData.username, // Opsional: simpan di auth metadata
+            username: formData.username,
             role: selectedRole,
           },
           emailRedirectTo: `${window.location.origin}/login`,
@@ -113,13 +112,13 @@ export function Register() {
 
       authUserId = authData.user.id;
 
-      // 3. Insert ke tabel users
+      // 3. Insert ke tabel public.users
       const { data: userRecord, error: userError } = await supabase
         .from('users')
         .insert([{
           auth_id: authUserId,
           nama_lengkap: formData.name,
-          nama_user: formData.username, // Map ke kolom nama_user di database
+          nama_user: formData.username,
           email: formData.email,
           no_telepon: formData.phone,
           peran: selectedRole,
@@ -168,14 +167,21 @@ export function Register() {
     } catch (error: any) {
       console.error('Register error:', error);
 
+      // Logout jika Auth sudah dibuat tapi insert gagal
       if (authUserId) {
         await supabase.auth.signOut();
       }
 
       if (error.code === '23505') {
-        toast.error('Email sudah terdaftar, gunakan email lain');
+        if (error.message?.includes('users_email_key')) {
+          toast.error('Email sudah terdaftar, gunakan email lain');
+        } else if (error.message?.includes('users_nama_user')) {
+          toast.error('Username sudah digunakan, coba username lain');
+        } else {
+          toast.error('Data sudah terdaftar, coba gunakan yang lain');
+        }
       } else if (error.message?.includes('already registered')) {
-        toast.error('Email sudah terdaftar, gunakan email lain');
+        toast.error('Email sudah terdaftar di sistem auth');
       } else {
         toast.error(error.message || 'Terjadi kesalahan saat registrasi');
       }
@@ -270,16 +276,15 @@ export function Register() {
                 </div>
               </div>
 
-              {/* Letakkan di dalam form, mungkin di bawah Nama Lengkap */}
               <div className="space-y-1">
                 <Label htmlFor="username">Username *</Label>
-                <Input 
-                  id="username" 
-                  name="username" 
+                <Input
+                  id="username"
+                  name="username"
                   placeholder="Contoh: yunami"
-                  value={formData.username} 
-                  onChange={handleChange} 
-                  required 
+                  value={formData.username}
+                  onChange={handleChange}
+                  required
                 />
               </div>
 
@@ -319,10 +324,12 @@ export function Register() {
                 </div>
               </div>
 
+              {/* ← type="button" dan onClick untuk cegah double submit */}
               <Button
-                type="submit"
+                type="button"
                 className="w-full h-11 bg-green-600 hover:bg-green-700 mt-4"
                 disabled={isLoading}
+                onClick={handleSubmit}
               >
                 {isLoading
                   ? <Loader2 className="animate-spin h-4 w-4" />
