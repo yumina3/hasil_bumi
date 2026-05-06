@@ -102,11 +102,29 @@ export function Checkout() {
   };
 
   // ─── Helper: nama produk + berat ─────────────────────────────────────────
-  // Gabungkan nama_produk dengan selectedWeight jika ada
-  // Hasil: "Beras Merah (250 gram)" atau "Beras Merah" jika tidak ada berat
   const getDisplayName = (item: any): string => {
     const base = item.nama_produk || item.name || 'Produk';
     return item.selectedWeight ? `${base} (${item.selectedWeight})` : base;
+  };
+
+  // ─── Ambil user_id dari tabel users berdasarkan auth ─────────────────────
+  const getUserId = async (): Promise<number | null> => {
+    try {
+      // Coba dari sesi Supabase Auth
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', authUser.id)
+        .single();
+
+      if (error || !userData) return null;
+      return userData.id;
+    } catch {
+      return null;
+    }
   };
 
   // ─── Submit ───────────────────────────────────────────────────────────────
@@ -151,12 +169,15 @@ export function Checkout() {
       const orderId = Number(Date.now().toString().slice(-9));
       const noInvoice = `INV/${new Date().getFullYear()}/${orderId}`;
 
+      // ── Ambil user_id dari tabel users (null jika guest/tidak login) ──
+      const userId = await getUserId();
+
       const { error: orderError } = await supabase
         .from('pesanan')
         .insert([{
           id: orderId,
           no_invoice: noInvoice,
-          user_id: null,
+          user_id: userId,          // ← sudah diperbaiki, bukan hardcode null
           cabang_id: selectedBranchId,
           subtotal: totalPrice,
           ongkos_kirim: deliveryFee,
@@ -173,11 +194,10 @@ export function Checkout() {
 
       if (orderError) throw orderError;
 
-      // ── Simpan detail_pesanan dengan nama_produk yang sudah include berat ──
+      // ── Simpan detail_pesanan ──
       const detailItems = cart.map((item) => ({
         pesanan_id: orderId,
         produk_id: Number(item.id),
-        // nama_produk include berat jika dipilih: "Beras Merah (250 gram)"
         nama_produk: getDisplayName(item),
         harga_saat_beli: item.harga_jual,
         qty: item.quantity,
@@ -197,7 +217,6 @@ export function Checkout() {
         total: finalPrice,
         deliveryMethod,
         customerName: formData.name,
-        // items juga pakai nama yang include berat
         items: cart.map((i) => ({
           name: getDisplayName(i),
           qty: i.quantity,
@@ -371,7 +390,6 @@ export function Checkout() {
                     {cart.map((item, idx) => (
                       <div key={`${item.id}-${item.selectedWeight ?? idx}`} className="flex justify-between text-xs gap-2">
                         <span className="text-gray-600 flex-1">
-                          {/* Tampilkan nama + berat di ringkasan checkout */}
                           {getDisplayName(item)}
                           <span className="text-gray-400 ml-1">x{item.quantity}</span>
                         </span>
