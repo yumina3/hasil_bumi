@@ -47,53 +47,29 @@ export function Register() {
     fetchCabang();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isLoading) return; // ← guard double submit
-
+    // 1. Validasi Awal
+    if (isLoading) return;
     if (selectedRole === 'pelanggan' && !formData.address) {
-      toast.error('Alamat utama wajib diisi untuk pelanggan');
-      return;
+      return toast.error('Alamat utama wajib diisi untuk pelanggan');
     }
-
     if (selectedRole === 'admin_cabang' && !selectedCabangId) {
-      toast.error('Pilih cabang terlebih dahulu');
-      return;
+      return toast.error('Pilih cabang terlebih dahulu');
     }
-
     if (formData.password !== formData.confirmPassword) {
-      toast.error('Password tidak cocok');
-      return;
+      return toast.error('Password tidak cocok');
     }
-
     if (formData.password.length < 6) {
-      toast.error('Password minimal 6 karakter');
-      return;
+      return toast.error('Password minimal 6 karakter');
     }
 
     setIsLoading(true);
-    let authUserId: string | null = null;
 
     try {
-      // 1. Cek duplikat email/username di public.users
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id, nama_user, email')
-        .or(`email.eq.${formData.email},nama_user.eq.${formData.username}`)
-        .maybeSingle();
-
-      if (existingUser) {
-        if (existingUser.nama_user === formData.username) {
-          toast.error('Username sudah digunakan, coba username lain');
-        } else {
-          toast.error('Email sudah terdaftar, gunakan email lain');
-        }
-        setIsLoading(false);
-        return;
-      }
-
       // 2. Registrasi Supabase Auth
+      // Biarkan Supabase Auth memvalidasi email unik secara native
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -108,14 +84,15 @@ export function Register() {
       });
 
       if (authError) throw authError;
-      if (!authData.user) throw new Error('Gagal membuat akun');
+      if (!authData.user) throw new Error('Gagal membuat akun autentikasi');
 
-      authUserId = authData.user.id;
+      const authUserId = authData.user.id;
 
-      // 3. Insert ke tabel public.users
+      // 3. Insert/Upsert ke tabel public.users
+      // Menggunakan upsert dengan onConflict email untuk menghindari error 23505
       const { data: userRecord, error: userError } = await supabase
         .from('users')
-        .insert([{
+        .upsert({
           auth_id: authUserId,
           nama_lengkap: formData.name,
           nama_user: formData.username,
@@ -124,26 +101,24 @@ export function Register() {
           peran: selectedRole,
           cabang_id: selectedRole === 'admin_cabang' ? Number(selectedCabangId) : null,
           is_active: true,
-        }])
+        }, { onConflict: 'email' }) 
         .select()
         .single();
 
       if (userError) throw userError;
 
-      // 4. Jika admin_cabang: insert ke tabel admin_cabang
+      // 4. Logika tambahan berdasarkan role
       if (selectedRole === 'admin_cabang') {
         const { error: adminCabangError } = await supabase
           .from('admin_cabang')
-          .insert([{
+          .upsert([{
             user_id: userRecord.id,
             cabang_id: Number(selectedCabangId),
             is_active: true,
-          }]);
-
+          }], { onConflict: 'user_id' });
         if (adminCabangError) throw adminCabangError;
       }
 
-      // 5. Jika pelanggan: insert alamat utama
       if (selectedRole === 'pelanggan' && formData.address) {
         const { error: addressError } = await supabase
           .from('alamat_pelanggan')
@@ -154,36 +129,25 @@ export function Register() {
             alamat_lengkap: formData.address,
             is_utama: true,
           }]);
-
-        if (addressError) throw addressError;
+        // Tidak menggunakan upsert di sini agar user bisa punya banyak alamat jika gagal di percobaan pertama
+        if (addressError && addressError.code !== '23505') throw addressError;
       }
 
-      // 6. Logout agar tidak auto-login setelah register
+      // 5. Selesai
       await supabase.auth.signOut();
-
       toast.success('Registrasi berhasil! Silakan login.');
       navigate('/login', { state: { registeredEmail: formData.email } });
 
     } catch (error: any) {
       console.error('Register error:', error);
-
-      // Logout jika Auth sudah dibuat tapi insert gagal
-      if (authUserId) {
-        await supabase.auth.signOut();
-      }
-
-      if (error.code === '23505') {
-        if (error.message?.includes('users_email_key')) {
-          toast.error('Email sudah terdaftar, gunakan email lain');
-        } else if (error.message?.includes('users_nama_user')) {
-          toast.error('Username sudah digunakan, coba username lain');
-        } else {
-          toast.error('Data sudah terdaftar, coba gunakan yang lain');
-        }
-      } else if (error.message?.includes('already registered')) {
-        toast.error('Email sudah terdaftar di sistem auth');
+      
+      // Pesan error yang lebih user-friendly
+      if (error.message?.includes('already registered')) {
+        toast.error('Email ini sudah terdaftar di sistem.');
+      } else if (error.code === '23505') {
+        toast.error('Username atau data sudah digunakan.');
       } else {
-        toast.error(error.message || 'Terjadi kesalahan saat registrasi');
+        toast.error(error.message || 'Terjadi kesalahan sistem.');
       }
     } finally {
       setIsLoading(false);
@@ -213,8 +177,9 @@ export function Register() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Menggunakan onSubmit standar */}
             <form onSubmit={handleSubmit} className="space-y-3">
-
+              
               <div className="space-y-1">
                 <Label>Daftar Sebagai</Label>
                 <Select
@@ -236,22 +201,16 @@ export function Register() {
               {selectedRole === 'admin_cabang' && (
                 <div className="space-y-1">
                   <Label className="text-green-700 font-bold flex items-center gap-1">
-                    <Building className="h-4 w-4" />
-                    Pilih Cabang *
+                    <Building className="h-4 w-4" /> Pilih Cabang *
                   </Label>
                   {cabangLoading ? (
                     <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Memuat daftar cabang...
-                    </div>
-                  ) : cabangList.length === 0 ? (
-                    <div className="text-sm text-red-500 py-2">
-                      Tidak ada cabang tersedia
+                      <Loader2 className="h-4 w-4 animate-spin" /> Memuat...
                     </div>
                   ) : (
                     <Select value={selectedCabangId} onValueChange={setSelectedCabangId}>
                       <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Pilih cabang yang dikelola..." />
+                        <SelectValue placeholder="Pilih cabang..." />
                       </SelectTrigger>
                       <SelectContent>
                         {cabangList.map((cabang) => (
@@ -278,14 +237,7 @@ export function Register() {
 
               <div className="space-y-1">
                 <Label htmlFor="username">Username *</Label>
-                <Input
-                  id="username"
-                  name="username"
-                  placeholder="Contoh: yunami"
-                  value={formData.username}
-                  onChange={handleChange}
-                  required
-                />
+                <Input id="username" name="username" placeholder="yunami" value={formData.username} onChange={handleChange} required />
               </div>
 
               <div className="space-y-1">
@@ -295,15 +247,12 @@ export function Register() {
 
               {selectedRole === 'pelanggan' && (
                 <div className="space-y-1">
-                  <Label htmlFor="address" className="text-green-700 font-bold">
-                    Alamat Utama (Wajib) *
-                  </Label>
+                  <Label htmlFor="address" className="text-green-700 font-bold">Alamat Utama *</Label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Textarea
                       id="address"
                       name="address"
-                      placeholder="Masukkan alamat pengiriman utama Anda..."
                       className="pl-10 min-h-[80px]"
                       value={formData.address}
                       onChange={handleChange}
@@ -324,19 +273,16 @@ export function Register() {
                 </div>
               </div>
 
-              {/* ← type="button" dan onClick untuk cegah double submit */}
               <Button
-                type="button"
+                type="submit" // Kembali ke type="submit"
                 className="w-full h-11 bg-green-600 hover:bg-green-700 mt-4"
                 disabled={isLoading}
-                onClick={handleSubmit}
               >
-                {isLoading
-                  ? <Loader2 className="animate-spin h-4 w-4" />
-                  : selectedRole === 'admin_cabang'
-                    ? 'Daftar sebagai Admin Cabang'
-                    : 'Daftar & Simpan Alamat'
-                }
+                {isLoading ? (
+                  <Loader2 className="animate-spin h-4 w-4" />
+                ) : (
+                  selectedRole === 'admin_cabang' ? 'Daftar Admin Cabang' : 'Daftar & Simpan'
+                )}
               </Button>
 
               <div className="text-center text-sm pt-2">
