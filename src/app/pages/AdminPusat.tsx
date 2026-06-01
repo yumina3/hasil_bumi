@@ -15,6 +15,7 @@ import {
   Menu,
   AlertTriangle,
   Loader2,
+  Plus,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../../../utils/supabase/info';
@@ -39,8 +40,13 @@ interface Produk {
   is_perishable: boolean;
   is_active: boolean;
   created_at: string;
-  update_at: string;
+  updated_at: string;
   stok: number;
+}
+
+interface KategoriProduk {
+  id: number;
+  nama_kategori: string;
 }
 
 interface StokPerCabang {
@@ -69,6 +75,45 @@ interface EditForm {
   satuan: string;
 }
 
+interface TambahProdukForm {
+  kategori_id: string;
+  sku: string;
+  nama_produk: string;
+  deskripsi: string;
+  foto_url: string;
+  satuan: string;
+  harga_jual: string;
+  is_perishable: boolean;
+  is_active: boolean;
+}
+
+const INITIAL_TAMBAH_FORM: TambahProdukForm = {
+  kategori_id: '',
+  sku: '',
+  nama_produk: '',
+  deskripsi: '',
+  foto_url: '',
+  satuan: '',
+  harga_jual: '',
+  is_perishable: true,
+  is_active: true,
+};
+
+// Prefix SKU per kategori sesuai data Supabase
+const SKU_PREFIX_MAP: Record<string, string> = {
+  'Sayuran':       'SAY',
+  'Bumbu Dapur':   'BDR',
+  'Bumbu Instan':  'BIN',
+  'Rempah Instan': 'RMP',
+  'Buah':          'BUH',
+  'Frozen Food':   'FRZ',
+  'Lauk':          'LAU',
+  'Aneka Daging':  'DAG',
+  'Sembako':       'SMB',
+  'Kerupuk':       'KRP',
+  'Snack/Camilan': 'SNK',
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdminPusat() {
@@ -80,6 +125,7 @@ export function AdminPusat() {
 
   // Data states
   const [products, setProducts] = useState<Produk[]>([]);
+  const [kategoriList, setKategoriList] = useState<KategoriProduk[]>([]);
   const [stokPerCabang, setStokPerCabang] = useState<StokPerCabang[]>([]);
   const [rekapPenjualan, setRekapPenjualan] = useState<RekapPenjualan[]>([]);
   const [totalUsers, setTotalUsers] = useState<number>(0);
@@ -93,6 +139,12 @@ export function AdminPusat() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ nama_produk: '', harga_jual: 0, satuan: '' });
   const [saving, setSaving] = useState(false);
+
+  // ── Tambah Produk Modal state ──
+  const [showTambahModal, setShowTambahModal] = useState(false);
+  const [tambahForm, setTambahForm] = useState<TambahProdukForm>(INITIAL_TAMBAH_FORM);
+  const [savingTambah, setSavingTambah] = useState(false);
+  const [tambahErrors, setTambahErrors] = useState<Partial<TambahProdukForm>>({});
 
   // ── Auth guard ──
   useEffect(() => {
@@ -119,6 +171,21 @@ export function AdminPusat() {
       setLoadingCatalog(false);
     };
     fetchCatalog();
+  }, []);
+
+  // ── Fetch kategori produk ──
+  useEffect(() => {
+    const fetchKategori = async () => {
+      const { data, error } = await supabase
+        .from('kategori_produk')
+        .select('id, nama_kategori')
+        .order('nama_kategori', { ascending: true });
+
+      if (!error && data) {
+        setKategoriList(data);
+      }
+    };
+    fetchKategori();
   }, []);
 
   // ── Fetch stok per cabang (for low stock alerts) ──
@@ -182,12 +249,10 @@ export function AdminPusat() {
       minimumFractionDigits: 0,
     }).format(price);
 
-  // Low stock alerts dari view_stok_per_cabang
   const lowStockAlerts = stokPerCabang.filter(
     (s) => s.status_stok === 'Rendah' || s.status_stok === 'Habis'
   );
 
-  // Revenue per cabang dari view_rekap_penjualan
   const revenuePerCabang = rekapPenjualan.reduce<Record<string, number>>((acc, row) => {
     acc[row.nama_cabang] = (acc[row.nama_cabang] || 0) + row.total_pendapatan;
     return acc;
@@ -215,7 +280,7 @@ export function AdminPusat() {
         nama_produk: editForm.nama_produk,
         harga_jual: editForm.harga_jual,
         satuan: editForm.satuan,
-        update_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
 
@@ -224,9 +289,7 @@ export function AdminPusat() {
     } else {
       setProducts((prev) =>
         prev.map((p) =>
-          p.id === productId
-            ? { ...p, ...editForm }
-            : p
+          p.id === productId ? { ...p, ...editForm } : p
         )
       );
       toast.success('Produk berhasil diperbarui');
@@ -244,6 +307,84 @@ export function AdminPusat() {
     logout();
     navigate('/login');
     toast.success('Berhasil logout');
+  };
+
+  // ── Tambah Produk Handlers ──
+
+  const validateTambahForm = (): boolean => {
+    const errors: Partial<TambahProdukForm> = {};
+
+    if (!tambahForm.kategori_id) errors.kategori_id = 'Kategori wajib dipilih';
+    if (!tambahForm.sku.trim()) errors.sku = 'SKU wajib diisi';
+    if (!tambahForm.nama_produk.trim()) errors.nama_produk = 'Nama produk wajib diisi';
+    if (!tambahForm.satuan.trim()) errors.satuan = 'Satuan wajib diisi';
+    if (!tambahForm.harga_jual || Number(tambahForm.harga_jual) <= 0)
+      errors.harga_jual = 'Harga jual harus lebih dari 0';
+
+    setTambahErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+
+  // Auto-generate SKU prefix saat pilih kategori
+  const handleKategoriChange = (kategoriId: string) => {
+    const kategori = kategoriList.find((k) => String(k.id) === kategoriId);
+    const prefix = kategori ? (SKU_PREFIX_MAP[kategori.nama_kategori] ?? 'PRD') : '';
+    const existing = products.filter((p) => p.sku.startsWith(prefix + '-'));
+    const nextNum = existing.length + 1;
+    const suggestedSku = prefix ? `${prefix}-${String(nextNum).padStart(3, '0')}` : '';
+    setTambahForm((prev) => ({ ...prev, kategori_id: kategoriId, sku: suggestedSku }));
+    setTambahErrors((prev) => ({ ...prev, kategori_id: undefined, sku: undefined }));
+  };
+  const handleTambahProduk = async () => {
+    if (!validateTambahForm()) return;
+
+    setSavingTambah(true);
+    const { data, error } = await supabase
+      .from('produk')
+      .insert({
+        kategori_id: Number(tambahForm.kategori_id),
+        sku: tambahForm.sku.trim().toUpperCase(),
+        nama_produk: tambahForm.nama_produk.trim(),
+        deskripsi: tambahForm.deskripsi.trim() || null,
+        foto_url: tambahForm.foto_url.trim() || null,
+        satuan: tambahForm.satuan.trim(),
+        harga_jual: Number(tambahForm.harga_jual),
+        is_perishable: tambahForm.is_perishable,
+        is_active: tambahForm.is_active,
+        stok: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        toast.error('SKU sudah digunakan, gunakan SKU yang berbeda');
+        setTambahErrors({ sku: 'SKU sudah digunakan' });
+      } else {
+        toast.error('Gagal menambah produk: ' + error.message);
+      }
+    } else {
+      // Tambahkan ke state lokal
+      setProducts((prev) =>
+        [...prev, { ...data, stok: 0 }].sort((a, b) =>
+          a.nama_produk.localeCompare(b.nama_produk)
+        )
+      );
+      toast.success(`Produk "${data.nama_produk}" berhasil ditambahkan dan otomatis tersedia di semua cabang!`);
+      setShowTambahModal(false);
+      setTambahForm(INITIAL_TAMBAH_FORM);
+      setTambahErrors({});
+    }
+    setSavingTambah(false);
+  };
+
+  const handleCloseTambahModal = () => {
+    if (savingTambah) return;
+    setShowTambahModal(false);
+    setTambahForm(INITIAL_TAMBAH_FORM);
+    setTambahErrors({});
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -276,16 +417,16 @@ export function AdminPusat() {
           <div className="p-4 border-b bg-gray-50">
             <p className="text-sm font-medium">{user?.name}</p>
             <p className="text-xs text-gray-500">{user?.email}</p>
-            <Badge className="mt-2 bg-green-600">Highest Authority</Badge>
+            <Badge className="mt-2 bg-green-600">Super Admin</Badge>
           </div>
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2">
             {(
               [
-                { key: 'catalog', label: 'Master Catalog', Icon: Package },
-                { key: 'analytics', label: 'Multi-Branch Analytics', Icon: TrendingUp },
-                { key: 'users', label: 'User Management', Icon: Users },
+                { key: 'catalog', label: 'Kelola Produk', Icon: Package },
+                { key: 'analytics', label: 'Monitor Cabang', Icon: TrendingUp },
+                { key: 'users', label: 'Analytics', Icon: Users },
               ] as const
             ).map(({ key, label, Icon }) => (
               <button
@@ -340,8 +481,8 @@ export function AdminPusat() {
                 <Menu className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Dashboard Admin Pusat</h1>
-                <p className="text-sm text-gray-600">Kelola seluruh sistem Hasil Bumi</p>
+                <h1 className="text-2xl font-bold text-gray-900">Admin Pusat</h1>
+                <p className="text-sm text-gray-600">Kelola seluruh cabang Hasil Bumi</p>
               </div>
             </div>
             <LayoutDashboard className="h-5 w-5 text-green-600" />
@@ -359,7 +500,7 @@ export function AdminPusat() {
                 ⚠️ MULTI-BRANCH LOW STOCK ALERT!
               </AlertTitle>
               <AlertDescription className="text-red-700">
-                <strong>{lowStockAlerts.length} produk</strong> di berbagai cabang memiliki stok rendah atau habis. Segera koordinasi restock!
+                <strong>{lowStockAlerts.length} produk</strong> di berbagai cabang memiliki stok rendah atau habis.
                 <details className="mt-2 text-sm">
                   <summary className="cursor-pointer font-semibold hover:underline">Lihat detail</summary>
                   <div className="mt-2 space-y-1 max-h-40 overflow-y-auto bg-white p-2 rounded">
@@ -386,9 +527,9 @@ export function AdminPusat() {
           {/* System Notification */}
           <Alert className="mb-6 border-blue-200 bg-blue-50">
             <AlertCircle className="h-4 w-4 text-blue-600" />
-            <AlertTitle className="text-blue-800">System Notification</AlertTitle>
+            <AlertTitle className="text-blue-800">Catatan:</AlertTitle>
             <AlertDescription className="text-blue-700">
-              Data diambil secara real-time dari Supabase. Semua cabang beroperasi normal.
+              Perubahan <strong>Harga Jual</strong> akan langsung sinkron ke seluruh katalog pelanggan dan admin cabang.
             </AlertDescription>
           </Alert>
 
@@ -449,11 +590,24 @@ export function AdminPusat() {
             </Card>
           </div>
 
-          {/* ── Tab: Master Catalog ── */}
+          {/* ── Tab: Kelola Produk (Catalog) ── */}
           {activeTab === 'catalog' && (
             <Card>
               <CardHeader>
-                <CardTitle>Master Catalog — Daftar Produk</CardTitle>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Kelola Produk &amp; Harga (Pusat)</CardTitle>
+                    <p className="text-sm text-gray-500 mt-1">Atur harga jual dan informasi produk secara terpusat</p>
+                  </div>
+                  {/* ── BUTTON TAMBAH PRODUK ── */}
+                  <Button
+                    onClick={() => setShowTambahModal(true)}
+                    className="bg-green-600 hover:bg-green-700 text-white gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Tambah Produk
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {loadingCatalog ? (
@@ -487,7 +641,6 @@ export function AdminPusat() {
                                 </code>
                               </td>
 
-                              {/* Nama Produk */}
                               <td className="py-3 px-3">
                                 {isEditing ? (
                                   <Input
@@ -502,7 +655,6 @@ export function AdminPusat() {
                                 )}
                               </td>
 
-                              {/* Satuan */}
                               <td className="py-3 px-3">
                                 {isEditing ? (
                                   <Input
@@ -517,7 +669,6 @@ export function AdminPusat() {
                                 )}
                               </td>
 
-                              {/* Harga Jual */}
                               <td className="py-3 px-3 text-right">
                                 {isEditing ? (
                                   <Input
@@ -529,11 +680,12 @@ export function AdminPusat() {
                                     className="max-w-[150px] h-8 text-right ml-auto"
                                   />
                                 ) : (
-                                  formatPrice(product.harga_jual)
+                                  <span className="text-green-700 font-semibold">
+                                    {formatPrice(product.harga_jual)}
+                                  </span>
                                 )}
                               </td>
 
-                              {/* Stok */}
                               <td className="py-3 px-3 text-center">
                                 <span
                                   className={`font-semibold ${
@@ -548,7 +700,6 @@ export function AdminPusat() {
                                 </span>
                               </td>
 
-                              {/* Tipe */}
                               <td className="py-3 px-3 text-center">
                                 {product.is_perishable ? (
                                   <Badge variant="outline" className="text-orange-600 border-orange-300">
@@ -559,7 +710,6 @@ export function AdminPusat() {
                                 )}
                               </td>
 
-                              {/* Status */}
                               <td className="py-3 px-3 text-center">
                                 {product.is_active ? (
                                   <Badge className="bg-green-100 text-green-700 border border-green-300">
@@ -572,7 +722,6 @@ export function AdminPusat() {
                                 )}
                               </td>
 
-                              {/* Aksi */}
                               <td className="py-3 px-3 text-center">
                                 {isEditing ? (
                                   <div className="flex gap-2 justify-center">
@@ -631,7 +780,6 @@ export function AdminPusat() {
                 </div>
               ) : (
                 <>
-                  {/* Revenue per Cabang */}
                   <Card>
                     <CardHeader>
                       <CardTitle>Revenue per Cabang</CardTitle>
@@ -659,7 +807,6 @@ export function AdminPusat() {
                     </CardContent>
                   </Card>
 
-                  {/* Top 10 Produk Terlaris */}
                   <Card>
                     <CardHeader>
                       <CardTitle>Top 10 Produk Terlaris</CardTitle>
@@ -748,6 +895,281 @@ export function AdminPusat() {
           )}
         </main>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MODAL TAMBAH PRODUK
+      ═══════════════════════════════════════════════════════════ */}
+      {showTambahModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={handleCloseTambahModal}
+          />
+
+          {/* Modal Panel */}
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b bg-gradient-to-r from-green-600 to-green-700 rounded-t-xl">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                  <Plus className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Tambah Produk Baru</h2>
+                  <p className="text-xs text-green-100">Produk akan langsung tersedia di semua cabang</p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseTambahModal}
+                disabled={savingTambah}
+                className="text-white hover:text-green-200 transition-colors disabled:opacity-50"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+
+              {/* Info banner */}
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span>
+                  Produk yang ditambahkan di sini akan otomatis masuk ke katalog <strong>semua cabang</strong> dan dapat dipesan pelanggan.
+                </span>
+              </div>
+
+              {/* Row 1: Kategori + SKU */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Kategori */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Kategori <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={tambahForm.kategori_id}
+                    onChange={(e) => handleKategoriChange(e.target.value)}
+                    className={`w-full h-10 px-3 rounded-md border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                      tambahErrors.kategori_id ? 'border-red-400' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">-- Pilih Kategori --</option>
+                    {kategoriList.map((k) => (
+                      <option key={k.id} value={k.id}>
+                        {k.nama_kategori}
+                      </option>
+                    ))}
+                  </select>
+                  {tambahErrors.kategori_id && (
+                    <p className="text-xs text-red-500 mt-1">{tambahErrors.kategori_id}</p>
+                  )}
+                </div>
+
+                {/* SKU */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    SKU <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    placeholder="contoh: DAG-020"
+                    value={tambahForm.sku}
+                    onChange={(e) => {
+                      setTambahForm({ ...tambahForm, sku: e.target.value.toUpperCase() });
+                      setTambahErrors({ ...tambahErrors, sku: undefined });
+                    }}
+                    className={`uppercase ${tambahErrors.sku ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
+                  />
+                  {tambahErrors.sku && (
+                    <p className="text-xs text-red-500 mt-1">{tambahErrors.sku}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    Otomatis terisi saat pilih kategori. Prefix: SAY=Sayuran, BDR=Bumbu Dapur, DAG=Aneka Daging, dll. Bisa diedit manual.
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 2: Nama Produk */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nama Produk <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  placeholder="contoh: Ayam Broiler Segar"
+                  value={tambahForm.nama_produk}
+                  onChange={(e) => {
+                    setTambahForm({ ...tambahForm, nama_produk: e.target.value });
+                    setTambahErrors({ ...tambahErrors, nama_produk: undefined });
+                  }}
+                  className={tambahErrors.nama_produk ? 'border-red-400 focus-visible:ring-red-400' : ''}
+                />
+                {tambahErrors.nama_produk && (
+                  <p className="text-xs text-red-500 mt-1">{tambahErrors.nama_produk}</p>
+                )}
+              </div>
+
+              {/* Row 3: Harga Jual + Satuan */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Harga Jual */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Harga Jual (Rp) <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="contoh: 35000"
+                    min={0}
+                    value={tambahForm.harga_jual}
+                    onChange={(e) => {
+                      setTambahForm({ ...tambahForm, harga_jual: e.target.value });
+                      setTambahErrors({ ...tambahErrors, harga_jual: undefined });
+                    }}
+                    className={tambahErrors.harga_jual ? 'border-red-400 focus-visible:ring-red-400' : ''}
+                  />
+                  {tambahErrors.harga_jual && (
+                    <p className="text-xs text-red-500 mt-1">{tambahErrors.harga_jual}</p>
+                  )}
+                  {tambahForm.harga_jual && Number(tambahForm.harga_jual) > 0 && (
+                    <p className="text-xs text-green-600 mt-1">
+                      = {formatPrice(Number(tambahForm.harga_jual))}
+                    </p>
+                  )}
+                </div>
+
+                {/* Satuan */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Satuan <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={tambahForm.satuan}
+                    onChange={(e) => {
+                      setTambahForm({ ...tambahForm, satuan: e.target.value });
+                      setTambahErrors({ ...tambahErrors, satuan: undefined });
+                    }}
+                    className={`w-full h-10 px-3 rounded-md border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                      tambahErrors.satuan ? 'border-red-400' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">-- Pilih Satuan --</option>
+                    <option value="ekor">ekor</option>
+                    <option value="pack">pack</option>
+                    <option value="kg">kg</option>
+                    <option value="gram">gram</option>
+                    <option value="liter">liter</option>
+                    <option value="pcs">pcs</option>
+                    <option value="ikat">ikat</option>
+                    <option value="biji">biji</option>
+                    <option value="lusin">lusin</option>
+                  </select>
+                  {tambahErrors.satuan && (
+                    <p className="text-xs text-red-500 mt-1">{tambahErrors.satuan}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 4: Deskripsi */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Deskripsi <span className="text-gray-400 font-normal">(opsional)</span>
+                </label>
+                <textarea
+                  placeholder="Deskripsi singkat tentang produk..."
+                  value={tambahForm.deskripsi}
+                  onChange={(e) => setTambahForm({ ...tambahForm, deskripsi: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                />
+              </div>
+
+              {/* Row 5: Foto URL */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  URL Foto <span className="text-gray-400 font-normal">(opsional)</span>
+                </label>
+                <Input
+                  placeholder="https://example.com/foto-produk.jpg"
+                  value={tambahForm.foto_url}
+                  onChange={(e) => setTambahForm({ ...tambahForm, foto_url: e.target.value })}
+                />
+              </div>
+
+              {/* Row 6: Toggle Perishable + Status */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Perishable */}
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Produk Perishable</p>
+                    <p className="text-xs text-gray-500">Produk mudah basi/kadaluarsa</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTambahForm({ ...tambahForm, is_perishable: !tambahForm.is_perishable })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      tambahForm.is_perishable ? 'bg-orange-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        tambahForm.is_perishable ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Status Aktif */}
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Status Aktif</p>
+                    <p className="text-xs text-gray-500">Produk tersedia untuk dipesan</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTambahForm({ ...tambahForm, is_active: !tambahForm.is_active })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      tambahForm.is_active ? 'bg-green-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        tambahForm.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+              <Button
+                variant="outline"
+                onClick={handleCloseTambahModal}
+                disabled={savingTambah}
+              >
+                Batal
+              </Button>
+              <Button
+                onClick={handleTambahProduk}
+                disabled={savingTambah}
+                className="bg-green-600 hover:bg-green-700 text-white gap-2 min-w-[140px]"
+              >
+                {savingTambah ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Tambah Produk
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

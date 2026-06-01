@@ -43,7 +43,7 @@ export function Checkout() {
     paymentMethod: 'cod',
   });
 
-  // ─── Fetch cabang ────────────────────────────────────────────────────────
+  // Fetch cabang 
   useEffect(() => {
     const fetchBranches = async () => {
       const { data } = await supabase.from('cabang').select('*');
@@ -52,7 +52,7 @@ export function Checkout() {
     fetchBranches();
   }, []);
 
-  // ─── Cek kuota delivery ──────────────────────────────────────────────────
+  //  Cek kuota delivery 
   useEffect(() => {
     if (deliveryMethod !== 'delivery' || !selectedBranchId) {
       setDeliveryCountToday(0);
