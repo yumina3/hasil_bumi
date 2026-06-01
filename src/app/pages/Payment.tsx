@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import { QrCode, CheckCircle, Clock, Copy, Loader2, Banknote as CashIcon } from 'lucide-react';
+import { CheckCircle, Clock, Copy, Loader2, Banknote as CashIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Separator } from '../components/ui/separator';
 import { toast } from 'sonner';
 import { supabase } from '../../../utils/supabase/info';
+import qrisImage from '../data/qris.jpeg';
 
 interface PaymentState {
   pesanan_id: string;
@@ -43,7 +44,6 @@ export function Payment() {
     return () => clearInterval(timer);
   }, [paymentStatus, isCOD, countdown]);
 
-  // COD langsung proses otomatis
   useEffect(() => {
     if (isCOD) {
       handleConfirmPayment();
@@ -167,8 +167,10 @@ export function Payment() {
               <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
                 isQRIS ? 'bg-purple-50' : 'bg-green-50'
               }`}>
-                {isQRIS && <QrCode className="h-8 w-8 text-purple-600" />}
-                {isCOD  && <CashIcon className="h-8 w-8 text-green-600" />}
+                {isQRIS && (
+                  <img src={qrisImage} alt="QRIS" className="w-10 h-10 object-contain rounded" />
+                )}
+                {isCOD && <CashIcon className="h-8 w-8 text-green-600" />}
               </div>
             </div>
 
@@ -189,9 +191,11 @@ export function Payment() {
             {/* QRIS */}
             {isQRIS && (
               <div className="text-center bg-white p-4 border-2 border-dashed rounded-3xl">
-                <div className="w-40 h-40 bg-gray-100 mx-auto flex items-center justify-center rounded-xl mb-2">
-                  <QrCode className="h-24 w-24 text-gray-300" />
-                </div>
+                <img
+                  src={qrisImage}
+                  alt="QRIS Hasil Bumi"
+                  className="w-56 h-auto mx-auto rounded-xl mb-2 object-contain"
+                />
                 <p className="text-[10px] text-gray-400">Scan QRIS HASIL BUMI</p>
                 <p className="text-[10px] text-purple-500 mt-1">GoPay · OVO · DANA · ShopeePay</p>
               </div>
