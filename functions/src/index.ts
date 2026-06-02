@@ -1,48 +1,33 @@
-import { Hono } from "npm:hono";
-import { cors } from "npm:hono/cors";
-import { logger } from "npm:hono/logger";
-import { Resend } from "npm:resend";
-import { createClient } from "npm:@supabase/supabase-js";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
+// 💡 UBAH DI SINI: Menggunakan v1 API agar ramah paket gratisan Spark
+import * as functions from "firebase-functions/v1";
 
 const app = new Hono();
 
-// 1. Inisialisasi Resend dengan mengambil API key dari environment variable (.env)
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const MY_RESEND_KEY = "re_Bm5Vccto_9ozp1yxcuCnWrPtx4siRCvVe"; 
+const MY_SUPABASE_URL = "https://ppxtvcmbehzcsjaesyqe.supabase.co"; 
+const MY_SUPABASE_SERVICE_KEY = "sb_secret_8u7o93JOVR70MvYxEyzrAw_vmTjBy-5"; 
 
-// 2. Ambil Environment Variables untuk Supabase Client
-const supabaseUrl = Deno.env.get("SUPABASE_URL");
-const supabaseAdminKey = Deno.env.get("VITE_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY");
+const resend = new Resend(MY_RESEND_KEY);
+const supabase = createClient(MY_SUPABASE_URL, MY_SUPABASE_SERVICE_KEY);
 
-if (!supabaseUrl || !supabaseAdminKey) {
-  console.log("⚠️ PERINGATAN: Kredensial Supabase tidak terdeteksi di .env!");
-}
-
-// Inisialisasi Supabase Client dengan hak akses Admin penuh (service_role)
-const supabase = createClient(
-  supabaseUrl || "https://placeholder-project.supabase.co", 
-  supabaseAdminKey || "placeholder-key"
-);
-
-// Enable logger untuk tracking request masuk di terminal Deno
 app.use('*', logger(console.log));
+app.use("/*", cors({
+  origin: "*",
+  allowHeaders: ["Content-Type", "Authorization"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+}));
 
-// Enable CORS agar frontend React tidak diblokir oleh browser
-app.use(
-  "/*",
-  cors({
-    origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  }),
-);
-
-// Health check endpoint
-app.get("/make-server-376a5b07/health", (c) => {
-  return c.json({ status: "ok" });
+app.get("/health", (c) => {
+  return c.json({ status: "ok", platform: "Firebase Cloud Functions v1 Spark Free" });
 });
 
 // =======================================================
-// ENDPOINT A: GENERATE DAN KIRIM EMAIL OTP ANGKA (FORGOT) - AMAN (TIDAK BERUBAH)
+// ENDPOINT A: GENERATE DAN KIRIM EMAIL OTP ANGKA (FORGOT)
 // =======================================================
 app.post("/reset-password", async (c) => {
   try {
@@ -83,7 +68,7 @@ app.post("/reset-password", async (c) => {
 });
 
 // =======================================================
-// ENDPOINT B: UPDATE PASSWORD LANGSUNG PAKAI USER ID - AMAN (TIDAK BERUBAH)
+// ENDPOINT B: UPDATE PASSWORD LANGSUNG PAKAI USER ID
 // =======================================================
 app.post("/update-password", async (c) => {
   try {
@@ -101,7 +86,7 @@ app.post("/update-password", async (c) => {
 });
 
 // =======================================================
-// ENDPOINT C: DAFTAR AKUN BARU + LOGIKA TOLERANSI DUPLIKASI (FIXED OTP)
+// ENDPOINT C: DAFTAR AKUN BARU + LOGIKA TOLERANSI DUPLIKASI
 // =======================================================
 app.post("/register", async (c) => {
   try {
@@ -110,7 +95,6 @@ app.post("/register", async (c) => {
 
     let authUserId = "";
 
-    // 1. Coba daftarkan user baru di database autentikasi
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -119,14 +103,12 @@ app.post("/register", async (c) => {
     });
 
     if (authError) {
-      // JIKA USER SUDAH TERDAFTAR TAPI BELUM AKTIF: Kita bypass dan timpa password barunya
       if (authError.message.includes("already registered") || authError.status === 422) {
         const { data: listData } = await supabase.auth.admin.listUsers();
         const existingUser = listData?.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
         
         if (existingUser) {
           authUserId = existingUser.id;
-          // Perbarui kredensial password dan metadatanya secara paksa
           await supabase.auth.admin.updateUserById(authUserId, {
             password,
             user_metadata: { full_name: fullName, username, role }
@@ -141,7 +123,6 @@ app.post("/register", async (c) => {
       authUserId = authData.user.id;
     }
 
-    // 2. Insert atau Sinkronkan data ke tabel public.users
     const { data: insertedUsers, error: userError } = await supabase
       .from('users')
       .upsert({
@@ -159,7 +140,6 @@ app.post("/register", async (c) => {
     if (userError) throw userError;
     const userRecord = insertedUsers?.[0];
 
-    // 3. Simpan relasi tabel data tambahan
     if (role === 'admin_cabang' && cabangId && userRecord) {
       await supabase.from('admin_cabang').upsert([{ user_id: userRecord.id, cabang_id: cabangId, is_active: true }], { onConflict: 'user_id' });
     }
@@ -167,10 +147,8 @@ app.post("/register", async (c) => {
       await supabase.from('alamat_pelanggan').insert([{ user_id: userRecord.id, nama_penerima: fullName, no_telepon: phone, alamat_lengkap: address, is_utama: true }]);
     }
 
-    // 4. Generate 6 Digit Angka acak untuk OTP Registrasi
     const displayOTP = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // 5. Kirim Kode Keamanan OTP melalui Resend
     await resend.emails.send({
       from: 'Hasil Bumi <no-reply@sisfordev2.com>',
       to: [email],
@@ -181,25 +159,20 @@ app.post("/register", async (c) => {
           <p>Halo <strong>${fullName}</strong>,</p>
           <p>Terima kasih telah bergabung. Berikut adalah 6 digit angka kode OTP verifikasi pendaftaran akun Anda:</p>
           <div style="text-align: center; margin: 30px 0;">
-            <div style="background-color: #f0fdf4; border: 2px dashed #16a34a; color: #16a34a; font-size: 36px; font-weight: bold; letter-spacing: 8px; padding: 12px 24px; display: inline-block; border-radius: 8px;">
-              ${displayOTP}
-            </div>
+            <div style="background-color: #f0fdf4; border: 2px dashed #16a34a; color: #16a34a; font-size: 36px; font-weight: bold; letter-spacing: 8px; padding: 12px 24px; display: inline-block; border-radius: 8px;">${displayOTP}</div>
           </div>
-          <p style="font-size: 13px; color: #666; text-align: center;">Masukkan kode di atas pada layar verifikasi untuk mengaktifkan akun Hasil Bumi Anda.</p>
         </div>
       `
     });
 
     return c.json({ success: true, displayOTP, userId: authUserId });
-
   } catch (error: any) {
-    console.error("❌ Catch Register Error:", error.message);
     return c.json({ success: false, error: error.message }, 500);
   }
 });
 
 // =======================================================
-// ENDPOINT D: AKTIVASI STATUS EMAIL_CONFIRM USER SETELAH OTP SUKSES
+// ENDPOINT D: AKTIVASI STATUS EMAIL_CONFIRM USER
 // =======================================================
 app.post("/activate-user", async (c) => {
   try {
@@ -216,4 +189,35 @@ app.post("/activate-user", async (c) => {
   }
 });
 
-Deno.serve(app.fetch);
+// =======================================================
+// BRIDGE UNTUK FIREBASE FUNCTIONS V1 EXPRESS-STYLE
+// =======================================================
+export const api = functions.https.onRequest(async (req, res) => {
+  const incomingHeaders = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value) {
+      if (Array.isArray(value)) {
+        value.forEach(v => incomingHeaders.append(key, v));
+      } else {
+        incomingHeaders.set(key, value);
+      }
+    }
+  }
+
+  const url = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  const honoReq = new Request(url, {
+    method: req.method,
+    headers: incomingHeaders,
+    body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body) : undefined
+  });
+
+  const honoRes = await app.fetch(honoReq);
+  
+  honoRes.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
+
+  res.status(honoRes.status);
+  const resBody = await honoRes.text();
+  res.send(resBody);
+});
