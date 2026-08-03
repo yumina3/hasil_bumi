@@ -1,0 +1,539 @@
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router';
+import { ArrowLeft, Package, CheckCircle, Truck, MapPin, Store, Loader2, CreditCard } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Separator } from '../components/ui/separator';
+import { supabase } from "../../../utils/supabase/info";
+import qrisImage from '../data/qris.jpeg';
+
+type DeliveryMethod = 'delivery' | 'pick_up';
+
+const PICKUP_STEPS = [
+  {
+    key: 'menunggu_konfirmasi',
+    status: 'Menunggu Konfirmasi Toko',
+    description: 'Pesanan Anda telah masuk dan menunggu dikonfirmasi oleh toko.',
+    icon: Package,
+  },
+  {
+    key: 'diproses',
+    status: 'Pesanan Dibuat',
+    description: 'Pesanan telah dikonfirmasi oleh toko dan sedang disiapkan.',
+    icon: CheckCircle,
+  },
+  {
+    key: 'dikemas',
+    status: 'Pesanan Sedang Dikemas',
+    description: 'Toko sedang mengemas pesanan Anda.',
+    icon: Package,
+  },
+  {
+    key: 'siap_diambil',
+    status: 'Pesanan Siap Diambil',
+    description: 'Silakan ambil pesanan Anda di toko.',
+    icon: Store,
+  },
+  {
+    key: 'selesai',
+    status: 'Pesanan Selesai',
+    description: 'Pesanan telah selesai. Terima kasih telah berbelanja!',
+    icon: CheckCircle,
+  },
+];
+
+const DELIVERY_STEPS = [
+  {
+    key: 'menunggu_konfirmasi',
+    status: 'Menunggu Konfirmasi Toko',
+    description: 'Pesanan Anda telah masuk dan menunggu dikonfirmasi oleh toko.',
+    icon: Package,
+  },
+  {
+    key: 'diproses',
+    status: 'Pesanan Dibuat',
+    description: 'Pesanan telah dikonfirmasi oleh toko.',
+    icon: CheckCircle,
+  },
+  {
+    key: 'dikemas',
+    status: 'Pesanan Sedang Dikemas',
+    description: 'Toko sedang mengemas pesanan Anda dengan teliti.',
+    icon: Package,
+  },
+  {
+    key: 'dikirim',
+    status: 'Pesanan Dalam Pengiriman',
+    description: 'Pesanan sedang dalam perjalanan menuju lokasi Anda.',
+    icon: Truck,
+  },
+  {
+    key: 'selesai',
+    status: 'Pesanan Selesai',
+    description: 'Pesanan telah diterima. Terima kasih telah berbelanja!',
+    icon: CheckCircle,
+  },
+];
+
+// Hapus PICKUP_STATUS_ORDER dan DELIVERY_STATUS_ORDER karena kita akan pakai logika dinamis
+
+const STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  menunggu_konfirmasi: { label: 'Menunggu Konfirmasi Toko', color: 'bg-amber-500'  },
+  menunggu_pembayaran: { label: 'Menunggu Pembayaran',      color: 'bg-yellow-500' },
+  pembayaran_lunas:    { label: 'Pembayaran Lunas',         color: 'bg-blue-400'   },
+  diproses:            { label: 'Dikonfirmasi',             color: 'bg-blue-600'   },
+  dikemas:             { label: 'Dikemas',                  color: 'bg-purple-600' },
+  dikirim:             { label: 'Dalam Pengiriman',         color: 'bg-orange-500' },
+  siap_diambil:        { label: 'Siap Diambil',             color: 'bg-teal-500'   },
+  selesai:             { label: 'Selesai',                  color: 'bg-green-600'  },
+  dibatalkan:          { label: 'Dibatalkan',               color: 'bg-red-500'    },
+  ditolak:             { label: 'Ditolak',                  color: 'bg-red-700'    },
+};
+
+export function OrderTracking() {
+  const { orderId } = useParams();
+  const [order, setOrder] = useState<any>(null);
+  const [cabang, setCabang] = useState<any>(null);
+  const [pengiriman, setPengiriman] = useState<any>(null);
+  const [detailPesanan, setDetailPesanan] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!orderId) return;
+
+      const parsedId = Number(orderId);
+      if (isNaN(parsedId)) {
+        console.error('orderId tidak valid:', orderId);
+        setLoading(false);
+        return;
+      }
+
+      const { data: orderData, error: orderError } = await supabase
+        .from('pesanan')
+        .select('*')
+        .eq('id', parsedId)
+        .maybeSingle();
+
+      if (orderError || !orderData) {
+        console.error('Gagal fetch pesanan:', orderError?.message);
+        setLoading(false);
+        return;
+      }
+
+      setOrder(orderData);
+
+      const { data: detailData } = await supabase
+        .from('detail_pesanan')
+        .select('nama_produk, qty, harga_saat_beli')
+        .eq('pesanan_id', parsedId);
+
+      if (detailData) setDetailPesanan(detailData);
+
+      if (orderData.cabang_id) {
+        const { data: cabangData } = await supabase
+          .from('cabang')
+          .select('*')
+          .eq('id', orderData.cabang_id)
+          .maybeSingle();
+        if (cabangData) setCabang(cabangData);
+      }
+
+      if (orderData.delivery_method === 'delivery') {
+        const { data: pengirimanData } = await supabase
+          .from('pengiriman')
+          .select('id, pesanan_id, nama_kurir, no_resi_lokal, jarak_km, ongkos_kirim, status_pengiriman, jadwal_kirim, updated_at')
+          .eq('pesanan_id', parsedId)
+          .maybeSingle();
+        if (pengirimanData) setPengiriman(pengirimanData);
+      }
+
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [orderId]);
+
+  const formatPrice = (price: number) =>
+    new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+    }).format(price ?? 0);
+
+  const formatDate = (ts: string) => {
+    if (!ts) return '-';
+    return new Intl.DateTimeFormat('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }).format(new Date(ts));
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="animate-spin h-10 w-10 text-green-600" />
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Pesanan tidak ditemukan.</p>
+          <Link to="/orders">
+            <Button variant="outline">Kembali ke Pesanan</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const deliveryMethod = (order.delivery_method ?? 'delivery') as DeliveryMethod;
+  const isPickup = deliveryMethod === 'pick_up';
+  const isQRIS = order.metode_pembayaran === 'qris' || order.pembayaran?.metode_bayar === 'qris';
+
+  let steps = isPickup ? [...PICKUP_STEPS] : [...DELIVERY_STEPS];
+
+  if (isQRIS) {
+    // Sisipkan step 'Menunggu Pembayaran' setelah 'Menunggu Konfirmasi Toko'
+    steps.splice(1, 0, {
+      key: 'menunggu_pembayaran',
+      status: 'Menunggu Pembayaran',
+      description: 'Toko telah mengonfirmasi pesanan. Silakan lakukan pembayaran.',
+      icon: CreditCard,
+    });
+  }
+
+  let mappedStatus = order.status_pesanan;
+  if (mappedStatus === 'pembayaran_lunas') mappedStatus = 'diproses'; // Anggap lunas masuk tahap diproses
+
+  const currentStepIndex = steps.findIndex(s => s.key === mappedStatus);
+
+  const isCancelled = order.status_pesanan === 'dibatalkan';
+  const currentStatus = STATUS_LABEL[order.status_pesanan] ?? { label: order.status_pesanan, color: 'bg-gray-500' };
+
+  const totalQty = detailPesanan.reduce((sum, item) => sum + (item.qty ?? 0), 0);
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="container mx-auto px-4 max-w-4xl">
+
+        <div className="mb-6">
+          <Link to="/orders">
+            <Button variant="ghost" className="mb-4 gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Kembali ke Pesanan
+            </Button>
+          </Link>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h1 className="text-2xl font-bold mb-1">Lacak Pesanan</h1>
+              <p className="text-gray-500 text-sm">
+                No. Invoice: <span className="font-semibold text-gray-800">{order.no_invoice}</span>
+              </p>
+            </div>
+            <Badge className={`${currentStatus.color} text-white px-4 py-2 text-sm`}>
+              {currentStatus.label}
+            </Badge>
+          </div>
+        </div>
+
+        {/* ── Pembayaran QRIS (Menunggu Pembayaran) ── */}
+        {order.status_pesanan === 'menunggu_pembayaran' && (order.metode_pembayaran === 'qris' || order.pembayaran?.metode_bayar === 'qris') && (
+          <Card className="mb-6 border-2 border-purple-300 bg-purple-50/40 shadow-md overflow-hidden">
+            <CardHeader className="text-center pb-2 bg-purple-100/50">
+              <CardTitle className="text-lg font-black text-purple-950 flex items-center justify-center gap-2">
+                Pembayaran QRIS Diperlukan
+              </CardTitle>
+              <p className="text-xs text-purple-800">
+                Pesanan Anda telah dikonfirmasi toko. Silakan scan kode QRIS di bawah ini dengan nominal pas:
+              </p>
+            </CardHeader>
+            <CardContent className="text-center space-y-4 pt-4">
+              <div className="bg-white p-4 rounded-2xl border border-purple-200 w-fit mx-auto shadow-sm">
+                <img src={qrisImage} alt="QRIS Hasil Bumi" className="w-56 h-auto mx-auto rounded-xl object-contain" />
+                <p className="text-xs font-bold text-gray-800 mt-2">HASIL BUMI INDONESIA</p>
+                <p className="text-lg font-black text-purple-700">{formatPrice(order.total_bayar)}</p>
+              </div>
+              <div className="p-3.5 bg-purple-100/80 rounded-xl text-xs text-purple-950 max-w-md mx-auto space-y-1.5 border border-purple-200">
+                <p className="font-bold flex items-center justify-center gap-1.5 text-sm text-purple-900">
+                  Menunggu Pembayaran Masuk...
+                </p>
+                <p className="text-[11px] leading-relaxed text-purple-800">
+                  Silakan transfer melalui m-Banking atau e-Wallet (Gopay, OVO, DANA, ShopeePay, BCA, dll). Admin Toko sedang memantau rekening masuk secara langsung. Setelah dana diterima, pesanan Anda otomatis langsung diproses dan dikirim ke alamat!
+                </p>
+              </div>
+
+              {/* Tombol Kirim Bukti Transfer */}
+              <div className="pt-2">
+                <Button 
+                  className="w-full max-w-sm bg-green-600 hover:bg-green-700 font-bold"
+                  onClick={() => {
+                    let phone = cabang?.no_telepon || cabang?.telp || '';
+                    if (phone.startsWith('0')) {
+                      phone = '62' + phone.substring(1);
+                    } else if (!phone) {
+                      phone = '6281234567890'; // fallback
+                    }
+                    const message = `Halo Admin Hasil Bumi,\n\nSaya ingin mengirimkan bukti transfer untuk pesanan dengan rincian berikut:\n- No. Invoice: *${order.no_invoice}*\n- Total Bayar: *${formatPrice(order.total_bayar)}*\n\nBerikut adalah gambar bukti transfernya. Terima kasih.`;
+                    const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(message)}`;
+                    window.open(waUrl, '_blank');
+                  }}
+                >
+                  Kirim Bukti Transfer via WhatsApp
+                </Button>
+                <p className="text-[10px] text-gray-500 mt-2">
+                  *Klik tombol di atas untuk mengirimkan screenshot bukti transfer Anda ke Admin
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Status Tracking ── */}
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>
+                {isPickup ? 'Status Pengambilan' : 'Status Pengiriman'}
+              </CardTitle>
+              <Badge variant="outline" className="font-normal">
+                {isPickup ? 'Ambil di Toko' : 'Diantar ke Rumah'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isCancelled ? (
+              <div className="text-center py-6">
+                <p className="text-red-500 font-semibold text-lg">Pesanan Dibatalkan</p>
+                <p className="text-gray-500 text-sm mt-1">Pesanan ini telah dibatalkan.</p>
+              </div>
+            ) : (
+              <div className="relative">
+                {steps.map((step, index) => {
+                  const Icon = step.icon;
+
+                  // FIX: Logika stepCompleted yang benar — cukup bandingkan index dengan currentStepIndex
+                  const stepCompleted = currentStepIndex !== -1 && index <= currentStepIndex;
+
+                  // FIX: isCurrent cukup cek index === currentStepIndex
+                  const isCurrent = index === currentStepIndex;
+
+                  const isDikirimStep = !isPickup && step.key === 'dikirim';
+
+                  return (
+                    <div key={step.key} className="flex gap-4 pb-8 last:pb-0">
+                      <div className="relative flex flex-col items-center">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                          stepCompleted
+                            ? 'bg-green-600 text-white shadow-md shadow-green-200'
+                            : 'bg-gray-100 text-gray-400'
+                        } ${isCurrent ? 'ring-4 ring-green-100' : ''}`}>
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        {index < steps.length - 1 && (
+                          <div
+                            className={`w-0.5 flex-1 mt-2 ${stepCompleted ? 'bg-green-500' : 'bg-gray-200'}`}
+                            style={{ minHeight: '40px' }}
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex-1 pb-2">
+                        <div className="flex items-start justify-between mb-1 flex-wrap gap-1">
+                          <h3 className={`font-semibold ${stepCompleted ? 'text-gray-900' : 'text-gray-400'}`}>
+                            {step.status}
+                            {isCurrent && (
+                              <span className="ml-2 text-xs font-normal text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                Sekarang
+                              </span>
+                            )}
+                          </h3>
+                          {step.key === 'menunggu_pembayaran' && order.created_at && (
+                            <span className="text-xs text-gray-400">{formatDate(order.created_at)}</span>
+                          )}
+                          {isDikirimStep && pengiriman && stepCompleted && (
+                            <span className="text-xs text-indigo-500 font-medium">
+                              {pengiriman.nama_kurir}
+                              {pengiriman.no_resi_lokal ? ` · ${pengiriman.no_resi_lokal}` : ''}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className={`text-sm ${stepCompleted ? 'text-gray-600' : 'text-gray-400'}`}>
+                          {step.description}
+                        </p>
+
+                        {isDikirimStep && pengiriman && stepCompleted && (
+                          <div className="mt-3 p-3 bg-indigo-50 rounded-xl text-xs text-indigo-700 space-y-1.5">
+                            <p>Kurir: <strong>{pengiriman.nama_kurir ?? '-'}</strong></p>
+                            {pengiriman.no_resi_lokal && (
+                              <p>No. Resi: <strong>{pengiriman.no_resi_lokal}</strong></p>
+                            )}
+                            {pengiriman.jarak_km && (
+                              <p>Jarak: <strong>{pengiriman.jarak_km} km</strong></p>
+                            )}
+                            {pengiriman.jadwal_kirim && (
+                              <p>Jadwal Kirim: <strong>{formatDate(pengiriman.jadwal_kirim)}</strong></p>
+                            )}
+                            {pengiriman.status_pengiriman && (
+                              <p>Status: <strong className="capitalize">{pengiriman.status_pengiriman}</strong></p>
+                            )}
+                            {pengiriman.updated_at && (
+                              <p>Update: <strong>{formatDate(pengiriman.updated_at)}</strong></p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Detail Produk ── */}
+        {detailPesanan.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Detail Produk</CardTitle>
+                <span className="text-xs text-gray-400 font-normal">
+                  {detailPesanan.length} produk · {totalQty} item
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {detailPesanan.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-xs font-bold text-green-700 shrink-0">
+                        {item.qty}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{item.nama_produk}</p>
+                        <p className="text-xs text-gray-400">{formatPrice(item.harga_saat_beli)} / satuan</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-800 shrink-0">
+                      {formatPrice(item.harga_saat_beli * item.qty)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <Separator className="my-4" />
+
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500">Total item dibeli</span>
+                <span className="font-semibold text-gray-800">{totalQty} item</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Informasi Pengambilan/Pengiriman ── */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>{isPickup ? 'Informasi Pengambilan' : 'Informasi Pengiriman'}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isPickup ? (
+              <div className="flex items-start gap-3">
+                <Store className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold mb-1">Ambil di Toko</p>
+                  <p className="text-sm text-gray-600">{cabang?.nama_cabang ?? '-'}</p>
+                  <p className="text-sm text-gray-600">{cabang?.alamat ?? '-'}</p>
+                  <p className="text-sm text-gray-600">{cabang?.no_telepon ?? cabang?.telp ?? '-'}</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold mb-1">Alamat Pengiriman</p>
+                    <p className="text-sm text-gray-600">{order.nama_penerima ?? '-'}</p>
+                    <p className="text-sm text-gray-600">{order.no_whatsapp ?? '-'}</p>
+                    <p className="text-sm text-gray-600">{order.alamat_pengiriman ?? '-'}</p>
+                  </div>
+                </div>
+                <Separator />
+                <div className="flex items-start gap-3">
+                  <Store className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold mb-1">Dikirim dari Cabang</p>
+                    <p className="text-sm text-gray-600">{cabang?.nama_cabang ?? '-'}</p>
+                    <p className="text-sm text-gray-600">{cabang?.alamat ?? '-'}</p>
+                    <p className="text-sm text-gray-600">{cabang?.no_telepon ?? cabang?.telp ?? '-'}</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Ringkasan Pembayaran ── */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Ringkasan Pembayaran</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Subtotal</span>
+                <span>{formatPrice(order.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Ongkos Kirim</span>
+                <span>{formatPrice(order.ongkos_kirim)}</span>
+              </div>
+              <Separator className="my-2" />
+              <div className="flex justify-between">
+                <span className="font-semibold">Total Pembayaran</span>
+                <span className="font-bold text-xl text-green-700">{formatPrice(order.total_bayar)}</span>
+              </div>
+            </div>
+            <Separator className="my-4" />
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Metode Pembayaran</span>
+                <span className="font-semibold capitalize">
+                  {order.metode_pembayaran?.replace('_', ' ') ?? '-'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Metode Pengiriman</span>
+                <Badge variant="outline" className={isPickup ? 'text-blue-600 border-blue-600' : 'text-green-600 border-green-600'}>
+                  {isPickup ? 'Ambil di Toko' : 'Diantar ke Rumah'}
+                </Badge>
+              </div>
+              {order.catatan && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Catatan</span>
+                  <span className="text-right max-w-[60%]">{order.catatan}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex gap-4">
+          <Button variant="outline" className="flex-1" asChild>
+            <Link to="/orders">Lihat Semua Pesanan</Link>
+          </Button>
+          <Button className="flex-1 bg-green-600 hover:bg-green-700" asChild>
+            <Link to="/produk">Belanja Lagi</Link>
+          </Button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
