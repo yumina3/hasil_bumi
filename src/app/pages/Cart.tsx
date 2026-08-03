@@ -41,7 +41,7 @@ export function Cart() {
 
   return (
     <div className="min-h-screen py-8 bg-gray-50">
-      <div className="container mx-auto px-4">
+      <div className="w-full px-4 lg:px-6">
         <h1 className="text-3xl font-bold mb-8 text-green-800">Keranjang Belanja</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -56,11 +56,11 @@ export function Cart() {
                   <CardContent className="p-4">
                     <div className="flex gap-4">
                       {/* Image */}
-                      <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 border">
+                      <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-white border">
                         <img
                           src={item.foto_url}
                           alt={item.nama_produk}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain p-2"
                         />
                       </div>
 

@@ -6,13 +6,14 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { toast } from 'sonner';
 import { supabase } from '../../../utils/supabase/info';
 
 export function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { addToCart, selectedBranchId } = useCart();
+  const { addToCart, selectedBranchId, setSelectedBranch } = useCart();
 
   const [product, setProduct] = useState<any>(null);
   const [branches, setBranches] = useState<any[]>([]);
@@ -34,7 +35,28 @@ export function ProductDetail() {
           .single();
 
         if (prodError) throw prodError;
-        setProduct(prodData);
+
+        let branchStock = prodData.stok ?? prodData.stock ?? 0;
+        if (selectedBranchId) {
+          const { data: stokData } = await supabase
+            .from('stok')
+            .select('jumlah_stok')
+            .eq('cabang_id', selectedBranchId)
+            .eq('produk_id', id)
+            .maybeSingle();
+          if (stokData && stokData.jumlah_stok !== undefined) {
+            branchStock = stokData.jumlah_stok;
+          } else {
+            branchStock = 0;
+          }
+        }
+
+        setProduct({
+          ...prodData,
+          stok: branchStock,
+          stock: branchStock,
+          jumlah_stok: branchStock,
+        });
 
         const { data: branData } = await supabase.from('cabang').select('*');
         if (branData) setBranches(branData);
@@ -46,7 +68,7 @@ export function ProductDetail() {
       }
     };
     if (id) fetchData();
-  }, [id]);
+  }, [id, selectedBranchId]);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -78,7 +100,7 @@ export function ProductDetail() {
       product?.qty ??
       null;
     const num = Number(stock);
-    return !isNaN(num) && num > 0 ? num : 999;
+    return !isNaN(num) && stock !== null && stock !== undefined ? num : 999;
   };
 
   const onAddToCart = () => {
@@ -171,11 +193,11 @@ export function ProductDetail() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
           {/* Image Section */}
-          <div className="relative aspect-square rounded-2xl overflow-hidden bg-gray-50 border">
+          <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border">
             <img
               src={product.foto_url}
               alt={product.nama_produk}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain p-6"
             />
             <Badge className="absolute top-4 right-4 bg-green-600 text-[10px] px-2 py-0.5">
               {product.satuan}
@@ -209,14 +231,33 @@ export function ProductDetail() {
               <div className="p-3 rounded-xl border bg-white">
                 <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Stok</p>
                 <p className="text-xs font-bold text-gray-800">
-                  {maxStock !== 999 ? `${maxStock} ${product.satuan}` : `- ${product.satuan}`}
+                  {maxStock !== 999 ? (maxStock === 0 ? `0 ${product.satuan} (Habis)` : `${maxStock} ${product.satuan}`) : `- ${product.satuan}`}
                 </p>
               </div>
-              <div className="p-3 rounded-xl border border-green-100 bg-green-50/30">
-                <p className="text-[10px] text-green-600 uppercase font-bold mb-1">Cabang</p>
-                <p className="text-xs font-bold text-green-800 truncate">
-                  {branches.find((b) => b.id === selectedBranchId)?.nama_cabang || 'Pilih Cabang'}
-                </p>
+              <div className="p-3 rounded-xl border border-green-100 bg-green-50/30 flex flex-col justify-between">
+                <p className="text-[10px] text-green-600 uppercase font-bold mb-1">Cabang Distribusi</p>
+                <Select
+                  value={selectedBranchId ? String(selectedBranchId) : undefined}
+                  onValueChange={(val) => {
+                    const bid = Number(val);
+                    setSelectedBranch(bid);
+                    const b = branches.find((item) => item.id === bid);
+                    if (b) {
+                      toast.success(`Cabang diubah ke: ${b.nama_cabang}`);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 py-0 px-2 text-xs font-bold text-green-800 bg-white border-green-200 hover:bg-green-50/50 shadow-2xs">
+                    <SelectValue placeholder="Pilih Cabang" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)} className="text-xs font-medium">
+                        {b.nama_cabang} {b.lokasi ? `(${b.lokasi})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -270,7 +311,7 @@ export function ProductDetail() {
 
                 {weightSelected && (
                   <p className="text-[10px] text-green-600 font-bold mt-2">
-                    ✓ Dipilih: {getSelectedWeightLabel()}
+                    Dipilih: {getSelectedWeightLabel()}
                   </p>
                 )}
               </div>
@@ -332,24 +373,31 @@ export function ProductDetail() {
             </div>
 
             {/* === TOMBOL AKSI === */}
-            <div className="flex gap-2 mt-auto">
-              <Button
-                onClick={onAddToCart}
-                variant="outline"
-                className="flex-1 py-5 text-xs font-bold border-green-600 text-green-600 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
-                disabled={weightRequired && !weightSelected}
-              >
-                <ShoppingCart className="h-3.5 w-3.5 mr-1" />
-                + Keranjang
-              </Button>
-              <Button
-                onClick={onBuyNow}
-                className="flex-1 py-5 text-xs font-bold bg-green-600 hover:bg-green-700 rounded-xl shadow-lg shadow-green-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                disabled={weightRequired && !weightSelected}
-              >
-                Beli Sekarang
-              </Button>
-            </div>
+            {maxStock === 0 ? (
+              <div className="mt-auto p-3 bg-red-50 border border-red-200 rounded-xl text-center">
+                <p className="text-xs font-bold text-red-600 mb-0.5">Stok Habis di Cabang Ini</p>
+                <p className="text-[10px] text-red-500">Silakan pilih cabang lain pada panel di atas.</p>
+              </div>
+            ) : (
+              <div className="flex gap-2 mt-auto">
+                <Button
+                  onClick={onAddToCart}
+                  variant="outline"
+                  className="flex-1 py-5 text-xs font-bold border-green-600 text-green-600 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={weightRequired && !weightSelected}
+                >
+                  <ShoppingCart className="h-3.5 w-3.5 mr-1" />
+                  + Keranjang
+                </Button>
+                <Button
+                  onClick={onBuyNow}
+                  className="flex-1 py-5 text-xs font-bold bg-green-600 hover:bg-green-700 rounded-xl shadow-lg shadow-green-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={weightRequired && !weightSelected}
+                >
+                  Beli Sekarang
+                </Button>
+              </div>
+            )}
 
             {/* Hint jika belum pilih berat */}
             {weightRequired && !weightSelected && (

@@ -4,8 +4,14 @@ import { ProductCard } from '../components/ProductCard';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { supabase } from '../../../utils/supabase/info';
+import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
+import { fetchProdukWithStokCabang } from '../utils/api';
+import { BranchSelectorBar } from '../components/BranchSelectorBar';
 
 export function Products() {
+  const { user } = useAuth();
+  const { selectedBranchId } = useCart();
   const [productList, setProductList] = useState<any[]>([]);
   const [categoryList, setCategoryList] = useState<any[]>([]); 
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,13 +31,8 @@ export function Products() {
         if (catError) throw catError;
         setCategoryList(categories || []);
 
-        // 2. Ambil Data Produk
-        const { data: products, error: prodError } = await supabase
-          .from('produk')
-          .select('*')
-          .eq('is_active', true);
-
-        if (prodError) throw prodError;
+        // 2. Ambil Data Produk berserta Stok Cabang Terpilih
+        const products = await fetchProdukWithStokCabang(selectedBranchId);
         setProductList(products || []);
       } catch (err: any) {
         console.error("Gagal mengambil data:", err.message);
@@ -41,7 +42,7 @@ export function Products() {
     };
 
     fetchData();
-  }, []);
+  }, [selectedBranchId]);
 
   // 3. Logika Filter Produk
   const filteredProducts = productList.filter((product) => {
@@ -56,8 +57,11 @@ export function Products() {
   });
 
   return (
-    <div className="min-h-screen py-8 bg-gray-50">
-      <div className="container mx-auto px-4">
+    <div className="min-h-screen bg-gray-50 pb-12">
+      {(!user || user?.role === 'pelanggan') && (
+        <BranchSelectorBar />
+      )}
+      <div className="w-full px-4 lg:px-6 pt-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-green-800 mb-2">Katalog Hasil Bumi</h1>
           <p className="text-gray-600">Pilih kategori untuk menemukan kebutuhan dapur Anda.</p>

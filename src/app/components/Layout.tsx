@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router';
 import { Header } from './Header';
+import { Footer } from './Footer';
 import { FloatingCart } from './FloatingCart';
 
 export function Layout() {
@@ -9,6 +10,7 @@ export function Layout() {
       <main className="flex-1">
         <Outlet />
       </main>
+      <Footer />
       <FloatingCart />
     </div>
   );

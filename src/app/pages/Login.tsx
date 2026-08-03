@@ -6,7 +6,6 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { toast } from 'sonner';
 
@@ -15,7 +14,6 @@ export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<'pelanggan' | 'admin_cabang' | 'admin_pusat'>('pelanggan');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -35,13 +33,14 @@ export function Login() {
     setIsLoading(true);
     
     try {
-      await login(email, password, selectedRole);
+      const loggedInUser = await login(email, password);
       toast.success('Login berhasil!');
       
-      // Redirect based on role
-      if (selectedRole === 'admin_pusat') {
+      // Smart Redirect based on user role from database
+      const userRole = loggedInUser?.role || 'pelanggan';
+      if (userRole === 'admin_pusat') {
         navigate('/admin-pusat');
-      } else if (selectedRole === 'admin_cabang') {
+      } else if (userRole === 'admin_cabang') {
         navigate('/admin-cabang');
       } else {
         navigate('/');
@@ -71,13 +70,8 @@ export function Login() {
         {/* Logo & Brand */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="relative">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-green-600 to-green-700 shadow-lg">
-                <Mail className="h-10 w-10 text-white" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-white flex items-center justify-center shadow-md">
-                <Lock className="h-5 w-5 text-green-600" />
-              </div>
+            <div className="h-36 w-36 shrink-0 overflow-hidden flex items-center justify-center">
+              <img src="/logo_hasil_bumi.png" alt="Logo Hasil Bumi" className="h-full w-full object-contain transform scale-[2.5] drop-shadow-xl" />
             </div>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Hasil Bumi</h1>
@@ -85,31 +79,10 @@ export function Login() {
         </div>
 
         <Card className="border-2 shadow-xl">
-          <CardHeader className="space-y-4">
+          <CardHeader className="space-y-2">
             <div>
               <CardTitle className="text-2xl">Masuk ke Akun</CardTitle>
-              <CardDescription>Pilih tipe akun dan masukkan kredensial Anda</CardDescription>
-            </div>
-
-            {/* Role Selector */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">Login Sebagai</Label>
-              <Select
-                value={selectedRole}
-                onValueChange={(value) => {
-                  if (value) setSelectedRole(value as 'pelanggan' | 'admin_cabang' | 'admin_pusat');
-                }}
-                
-              >
-                <SelectTrigger className="h-11 w-full">
-                  <SelectValue placeholder="Pilih role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pelanggan">Pelanggan</SelectItem>
-                  <SelectItem value="admin_cabang">Admin Cabang</SelectItem>
-                  <SelectItem value="admin_pusat">Admin Pusat</SelectItem>
-                </SelectContent>
-              </Select>
+              <CardDescription>Masukkan email dan password Anda untuk melanjutkan</CardDescription>
             </div>
           </CardHeader>
 

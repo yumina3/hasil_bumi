@@ -29,7 +29,7 @@ export function ProductCard({ product }: ProductCardProps) {
     return;
   }
 
-  // ✅ JIKA ANDA INGIN PINDAH KE HALAMAN DETAIL (GAMBAR 2)
+  // JIKA ANDA INGIN PINDAH KE HALAMAN DETAIL (GAMBAR 2)
   // Gunakan navigate ke route detail produk Anda
   navigate(`/produk/${product.id}`); 
 };
@@ -44,14 +44,14 @@ export function ProductCard({ product }: ProductCardProps) {
   };
 
   return (
-    // ✅ FIX: link ke /produk/:id
+    // FIX: link ke /produk/:id
     <Link to={`/produk/${product.id}`}>
       <Card className="overflow-hidden transition-all hover:shadow-lg h-full flex flex-col">
-        <div className="relative aspect-square overflow-hidden bg-gray-100">
+        <div className="relative aspect-square overflow-hidden bg-white">
           <img
             src={product.foto_url || '/placeholder-produk.png'}
             alt={product.nama_produk}
-            className="h-full w-full object-cover transition-transform hover:scale-105"
+            className="h-full w-full object-contain p-4 transition-transform hover:scale-105"
           />
           {product.sku && (
             <Badge className="absolute top-2 right-2 bg-green-600 text-xs">
@@ -74,7 +74,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </div>
         </CardContent>
 
-        {/* ✅ FIX: CardFooter dengan tombol tambah ke keranjang */}
+        {/* FIX: CardFooter dengan tombol tambah ke keranjang */}
         <CardFooter className="p-4 pt-0">
           <Button
             onClick={handleAddToCart}

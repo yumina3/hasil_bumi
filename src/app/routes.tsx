@@ -14,31 +14,43 @@ import { OrderSuccess } from './pages/OrderSuccess';
 import { Orders } from './pages/Orders';
 import { OrderTracking } from './pages/OrderTracking';
 import { Register } from './pages/Register';
-import { AdminDashboard } from './pages/AdminDashboard';
 import { Login } from './pages/Login';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
-import { AdminPusat } from './pages/AdminPusat';
+import { Profile } from './pages/Profile';
 import { AdminPusatDashboard } from './pages/AdminPusat/Dashboard';
 import { AdminPusatProducts } from './pages/AdminPusat/Products';
 import { AdminPusatBranches } from './pages/AdminPusat/Branches';
 import { AdminPusatAnalytics } from './pages/AdminPusat/Analytics';
+import { AdminPusatStaff } from './pages/AdminPusat/Staff';
 import { AdminCabangDashboard } from './pages/AdminCabang/Dashboard';
 import { AdminCabangOrders } from './pages/AdminCabang/Orders';
 import { AdminCabangHistory } from './pages/AdminCabang/History';
 import { AdminCabangInventory } from './pages/AdminCabang/Inventory';
 import { NotFound } from './pages/NotFound';
+import { ErrorBoundary } from './pages/ErrorBoundary';
 
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
+    errorElement: <ErrorBoundary />,
     children: [
       { path: '/login', Component: Login },
       { path: '/register', Component: Register },
       { path: '/forgot-password', Component: ForgotPassword },
       { path: '/reset-password', Component: ResetPassword },
       {
+        path: '/profile',
+        errorElement: <ErrorBoundary />,
+        element: (
+          <ProtectedRoute allowedRoles={['admin_pusat', 'admin_cabang', 'pelanggan']}>
+            <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: '/admin-pusat',
+        errorElement: <ErrorBoundary />,
         element: (
           <ProtectedRoute allowedRoles={['admin_pusat']}>
             <AdminPusatLayout />
@@ -49,10 +61,12 @@ export const router = createBrowserRouter([
           { path: 'products', Component: AdminPusatProducts },
           { path: 'branches', Component: AdminPusatBranches },
           { path: 'analytics', Component: AdminPusatAnalytics },
+          { path: 'staff', Component: AdminPusatStaff },
         ],
       },
       {
         path: '/admin-cabang',
+        errorElement: <ErrorBoundary />,
         element: (
           <ProtectedRoute allowedRoles={['admin_cabang']}>
             <AdminCabangLayout />  {/* Provider sudah di dalam AdminCabangLayout */}
@@ -70,6 +84,7 @@ export const router = createBrowserRouter([
 {
   path: '/',
   Component: Layout,
+  errorElement: <ErrorBoundary />,
   children: [
     { index: true, Component: Home },
     { path: 'produk', Component: Products },
@@ -119,14 +134,6 @@ export const router = createBrowserRouter([
       element: (
         <ProtectedRoute allowedRoles={['pelanggan']}>
           <OrderTracking />
-        </ProtectedRoute>
-      ),
-    },
-    {
-      path: 'admin',
-      element: (
-        <ProtectedRoute allowedRoles={['pelanggan']}>
-          <AdminDashboard />
         </ProtectedRoute>
       ),
     },

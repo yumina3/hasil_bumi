@@ -5,7 +5,7 @@ import {
   XCircle, AlertTriangle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useAdminCabangData } from '../../context/AdminCabangContext';
-import { orderService } from '../orderService';
+import { orderService } from '../../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -34,11 +34,11 @@ export function AdminCabangOrders() {
     try {
       await orderService.updateStatus(orderId, newStatus as any);
       const statusMessages: Record<string, string> = {
-        diproses:     '✓ Pesanan dikonfirmasi',
-        dikemas:      '📦 Pesanan sedang dikemas',
-        dikirim:      '🚚 Pesanan sedang dikirim',
-        siap_diambil: '✓ Pesanan siap diambil',
-        selesai:      '🎉 Pesanan selesai',
+        diproses:     'Pesanan dikonfirmasi',
+        dikemas:      'Pesanan sedang dikemas',
+        dikirim:      'Pesanan sedang dikirim',
+        siap_diambil: 'Pesanan siap diambil',
+        selesai:      'Pesanan selesai',
       };
       toast.success(statusMessages[newStatus] || 'Status pesanan diupdate');
       await refreshAllData();
@@ -49,11 +49,13 @@ export function AdminCabangOrders() {
     }
   };
 
-  const handleAcceptOrder = async (orderId: number) => {
-    setSubmittingId(orderId);
+  const handleAcceptOrder = async (order: any) => {
+    setSubmittingId(order.id);
     try {
-      await orderService.updateStatus(orderId, 'diproses');
-      toast.success('✓ Pesanan diterima dan dikonfirmasi');
+      const isQRIS = order.pembayaran?.metode_bayar === 'qris' || order.metode_pembayaran === 'qris' || order.metode_bayar === 'qris';
+      const targetStatus = isQRIS ? 'menunggu_pembayaran' : 'diproses';
+      await orderService.updateStatus(order.id, targetStatus as any);
+      toast.success(isQRIS ? 'Pesanan diterima. Menunggu transfer QRIS dari pelanggan.' : 'Pesanan diterima dan dikonfirmasi');
       await refreshAllData();
     } catch (error: any) {
       toast.error('Gagal menerima pesanan: ' + error.message);
@@ -104,9 +106,7 @@ export function AdminCabangOrders() {
   };
 
   const isNewOrder = (status: string) =>
-  status === 'menunggu_konfirmasi' ||   // ← TAMBAH
-  status === 'menunggu_pembayaran' ||
-  status === 'pembayaran_lunas';
+    status === 'menunggu_konfirmasi';
 
   const getNextAction = (order: any): { label: string; status: string } | null => {
     if (isNewOrder(order.status_pesanan)) return null;
@@ -130,8 +130,8 @@ export function AdminCabangOrders() {
 
   const getProgressSteps = (order: any): string[] => {
     if (order.delivery_method === 'delivery')
-      return ['menunggu_pembayaran', 'diproses', 'dikemas', 'dikirim', 'selesai'];
-    return ['menunggu_pembayaran', 'diproses', 'dikemas', 'siap_diambil', 'selesai'];
+      return ['menunggu_konfirmasi', 'menunggu_pembayaran', 'diproses', 'dikemas', 'dikirim', 'selesai'];
+    return ['menunggu_konfirmasi', 'menunggu_pembayaran', 'diproses', 'dikemas', 'siap_diambil', 'selesai'];
   };
 
   const filteredOrders = orders.filter((order: any) => {
@@ -212,7 +212,7 @@ export function AdminCabangOrders() {
                     {getStatusBadge(order.status_pesanan)}
                     {isNew && (
                       <Badge className="bg-yellow-400 text-yellow-900 animate-pulse text-xs">
-                        🔔 Pesanan Baru
+                        Pesanan Baru
                       </Badge>
                     )}
                   </div>
@@ -245,12 +245,29 @@ export function AdminCabangOrders() {
                       {order.delivery_method === 'delivery' && order.alamat_pengiriman && (
                         <div className="flex items-start gap-2 text-sm text-gray-600">
                           <MapPin className="h-4 w-4 mt-0.5 shrink-0" />
-                          <span>{order.alamat_pengiriman}</span>
+                          <div className="flex-1">
+                            <div className="mb-1">
+                              {order.alamat_pengiriman.split('| [')[0].trim()}
+                            </div>
+                            <a 
+                              href={
+                                order.alamat_pengiriman.includes('| [')
+                                ? `https://www.google.com/maps/search/?api=1&query=${order.alamat_pengiriman.split('| [')[1].replace(']', '').replace(/\s/g, '')}`
+                                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.alamat_pengiriman)}`
+                              }
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              <MapPin className="h-3 w-3" />
+                              Buka Titik Peta Pelanggan
+                            </a>
+                          </div>
                         </div>
                       )}
                       {order.catatan && (
                         <p className="text-xs text-gray-500 italic bg-gray-50 rounded-lg px-3 py-2 border border-dashed">
-                          📝 {order.catatan}
+                          {order.catatan}
                         </p>
                       )}
                     </div>
@@ -302,7 +319,7 @@ export function AdminCabangOrders() {
                           ? 'text-orange-600 border-orange-200 bg-orange-50'
                           : 'text-green-600 border-green-200 bg-green-50'}
                       >
-                        {order.delivery_method === 'delivery' ? '🚚 Delivery' : '🏪 Pick Up'}
+                        {order.delivery_method === 'delivery' ? 'Delivery' : 'Pick Up'}
                       </Badge>
                       <div className="pt-2">
                         <p className="text-xs text-gray-400">Total Tagihan</p>
@@ -322,11 +339,33 @@ export function AdminCabangOrders() {
                   <div className="space-y-3">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Kendali Pesanan</p>
 
+                    {/* MENUNGGU PEMBAYARAN QRIS */}
+                    {order.status_pesanan === 'menunggu_pembayaran' && (
+                      <div className="space-y-2">
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+                          <p className="font-bold flex items-center gap-1">
+                            Menunggu Transfer QRIS
+                          </p>
+                          <p>
+                            Pantau mutasi masuk rekening/QRIS toko sebesar <b>{formatPrice(order.total_bayar)}</b> dari <b>{order.nama_penerima || 'Pelanggan'}</b>.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handleStatusUpdate(order.id, 'diproses')}
+                          disabled={isLoading}
+                          className="w-full bg-blue-600 hover:bg-blue-700 font-bold py-5 text-sm shadow-md disabled:opacity-60"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          {isLoading ? 'Memproses...' : 'Konfirmasi Dana Masuk & Kirim'}
+                        </Button>
+                      </div>
+                    )}
+
                     {/* PESANAN BARU */}
                     {isNew && (
                       <div className="space-y-2">
                         <Button
-                          onClick={() => handleAcceptOrder(order.id)}
+                          onClick={() => handleAcceptOrder(order)}
                           disabled={isLoading}
                           className="w-full bg-green-600 hover:bg-green-700 font-bold py-5 text-sm shadow-md disabled:opacity-60"
                         >
@@ -408,8 +447,8 @@ export function AdminCabangOrders() {
                           ? 'bg-red-50 text-red-500 border border-red-200'
                           : 'bg-gray-100 text-gray-400'
                       }`}>
-                        {order.status_pesanan === 'selesai' && '✓ Pesanan selesai'}
-                        {order.status_pesanan === 'ditolak' && '✕ Pesanan ditolak'}
+                        {order.status_pesanan === 'selesai' && 'Pesanan selesai'}
+                        {order.status_pesanan === 'ditolak' && 'Pesanan ditolak'}
                         {order.status_pesanan !== 'selesai' && order.status_pesanan !== 'ditolak' && 'Menunggu tindakan'}
                       </div>
                     )}

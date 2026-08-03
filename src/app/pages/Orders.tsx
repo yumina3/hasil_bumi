@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import {
   Package, Clock, Truck, CheckCircle, MapPin, Loader2, Store,
-  ChevronDown, ChevronUp, XCircle, AlertCircle, ThumbsUp,
+  ChevronDown, ChevronUp, XCircle, AlertCircle, ThumbsUp, CreditCard,
 } from 'lucide-react';
 import { supabase } from '../../../utils/supabase/info';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -44,15 +44,9 @@ export function Orders() {
       const { data, error } = await supabase
         .from('pesanan')
         .select(`
-          id,
-          no_invoice,
-          created_at,
-          status_pesanan,
-          total_bayar,
-          metode_pembayaran,
-          delivery_method,
-          alasan_penolakan,
-          detail_pesanan(id, qty, nama_produk, harga_saat_beli, total_harga)
+          *,
+          pembayaran (metode_bayar, status_pembayaran),
+          detail_pesanan (*)
         `)
         .order('created_at', { ascending: false });
 
@@ -73,7 +67,8 @@ export function Orders() {
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { icon: any; color: string; label: string }> = {
-      menunggu_pembayaran: { icon: Clock,       color: 'bg-yellow-500', label: 'Menunggu Pembayaran' },
+      menunggu_konfirmasi: { icon: Clock,       color: 'bg-amber-500',  label: 'Menunggu Konfirmasi Toko' },
+      menunggu_pembayaran: { icon: Clock,       color: 'bg-purple-500', label: 'Menunggu Pembayaran QRIS' },
       pembayaran_lunas:    { icon: Clock,       color: 'bg-blue-400',   label: 'Menunggu Konfirmasi' },
       dibayar:             { icon: CheckCircle, color: 'bg-blue-500',   label: 'Dibayar'             },
       diproses:            { icon: CheckCircle, color: 'bg-green-500',  label: 'Diterima & Diproses' },
@@ -95,7 +90,7 @@ export function Orders() {
 
   // Pesanan masih menunggu konfirmasi admin (belum diterima/ditolak)
   const isWaitingConfirmation = (status: string) =>
-    status === 'menunggu_pembayaran' || status === 'pembayaran_lunas';
+    status === 'menunggu_konfirmasi';
 
   // Pesanan sudah ditolak
   const isRejected = (status: string) => status === 'ditolak';
@@ -115,7 +110,7 @@ export function Orders() {
 
   return (
     <div className="min-h-screen py-8 bg-gray-50">
-      <div className="container mx-auto px-4">
+      <div className="w-full px-4 lg:px-6">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Pesanan Saya</h1>
           <p className="text-gray-600">Lacak dan kelola pesanan Anda</p>
@@ -235,12 +230,25 @@ function OrderCard({
           </div>
         )}
 
+        {/* ── Banner: Menunggu Pembayaran QRIS ── */}
+        {order.status_pesanan === 'menunggu_pembayaran' && (
+          <div className="flex items-start gap-3 p-3 bg-purple-50 border border-purple-200 rounded-xl">
+            <Clock className="h-5 w-5 text-purple-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-purple-900">Pesanan Disetujui! Silakan Transfer QRIS</p>
+              <p className="text-xs text-purple-700 mt-0.5">
+                Admin telah menyetujui pesanan Anda. Klik tombol <b>Bayar QRIS & Lacak</b> di bawah untuk melihat barcode QRIS.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Banner: Pesanan Diterima (status diproses) ── */}
         {order.status_pesanan === 'diproses' && (
           <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
             <ThumbsUp className="h-5 w-5 text-green-500 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-green-800">Pesanan Diterima! 🎉</p>
+              <p className="text-sm font-semibold text-green-800">Pesanan Diterima!</p>
               <p className="text-xs text-green-600 mt-0.5">
                 Admin telah menerima pesanan Anda dan sedang menyiapkannya.
               </p>
@@ -275,7 +283,7 @@ function OrderCard({
           </div>
           <div>
             <p className="text-gray-600">Metode Pembayaran</p>
-            <p className="font-semibold capitalize">{order.metode_pembayaran ?? '-'}</p>
+            <p className="font-semibold capitalize">{order.pembayaran?.metode_bayar || order.metode_pembayaran || order.pembayaran?.[0]?.metode_bayar || '-'}</p>
           </div>
           <div>
             <p className="text-gray-600">Total Item</p>
@@ -284,7 +292,7 @@ function OrderCard({
           <div>
             <p className="text-gray-600">Metode Pengiriman</p>
             <p className="font-semibold capitalize">
-              {order.delivery_method === 'delivery' ? '🚚 Delivery' : '🏪 Pick Up'}
+              {order.delivery_method === 'delivery' ? 'Delivery' : 'Pick Up'}
             </p>
           </div>
         </div>
@@ -314,7 +322,7 @@ function OrderCard({
                       </div>
                     </div>
                     <p className="text-sm font-semibold text-green-700 shrink-0 ml-3">
-                      {formatPrice(item.total_harga)}
+                      {formatPrice(item.total_harga || ((item.qty || 0) * (item.harga_saat_beli || 0)))}
                     </p>
                   </div>
                 ))}
@@ -334,8 +342,10 @@ function OrderCard({
           {/* Tombol Lacak hanya muncul jika pesanan sudah diterima (bukan menunggu atau ditolak) */}
           {!isWaitingConfirmation && !isRejected && (
             <Link to={`/order-tracking/${order.id}`} className="flex-1">
-              <Button variant="outline" className="w-full">
-                {isCompleted
+              <Button variant="outline" className={`w-full ${order.status_pesanan === 'menunggu_pembayaran' ? 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 font-bold' : ''}`}>
+                {order.status_pesanan === 'menunggu_pembayaran'
+                  ? <><CreditCard className="h-4 w-4 mr-2" />Bayar QRIS & Lacak</>
+                  : isCompleted
                   ? 'Lihat Detail'
                   : <><MapPin className="h-4 w-4 mr-2" />Lacak Pesanan</>}
               </Button>
@@ -361,7 +371,7 @@ function OrderCard({
           {/* Jika masih menunggu: tampilkan info saja */}
           {isWaitingConfirmation && (
             <div className="flex-1 flex items-center justify-center h-10 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-700 text-sm font-medium">
-              ⏳ Menunggu konfirmasi toko
+              Menunggu konfirmasi toko
             </div>
           )}
         </div>

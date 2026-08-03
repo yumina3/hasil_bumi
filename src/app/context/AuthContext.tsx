@@ -15,7 +15,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, role: UserRole) => Promise<void>;
+  login: (email: string, password: string, role?: UserRole) => Promise<User | undefined>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -146,9 +146,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (email: string, password: string, role: UserRole) => {
+  const login = async (email: string, password: string, role?: UserRole): Promise<User | undefined> => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      if (error.message.includes('Invalid login credentials')) {
+        throw new Error('Email atau password yang Anda masukkan salah.');
+      }
+      if (error.message.includes('Email not confirmed')) {
+        throw new Error('Akun ini belum diaktifkan (konfirmasi email/OTP belum selesai). Jika ini akun Admin Cabang, Super Admin dapat mengaktifkannya langsung dari menu Manajemen Staf.');
+      }
+      throw error;
+    }
 
     if (data.user) {
       const mappedUser = await mapUser(data.user);
@@ -159,7 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(mappedUser);
+      return mappedUser;
     }
+    return undefined;
   };
 
   const logout = async () => {

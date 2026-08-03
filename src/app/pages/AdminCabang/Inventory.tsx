@@ -131,7 +131,7 @@ export function AdminCabangInventory() {
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-600" />
           <AlertTitle className="text-red-800 font-bold">
-            ⚠️ LOW STOCK ALERT!
+            LOW STOCK ALERT!
           </AlertTitle>
           <AlertDescription className="text-red-700">
             <strong>{lowStockItems} produk</strong> memiliki stok di bawah
@@ -198,9 +198,9 @@ export function AdminCabangInventory() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="ok">✓ Stok Cukup</SelectItem>
-            <SelectItem value="low">⚠️ Stok Rendah</SelectItem>
-            <SelectItem value="out">❌ Habis Stok</SelectItem>
+            <SelectItem value="ok">Stok Cukup</SelectItem>
+            <SelectItem value="low">Stok Rendah</SelectItem>
+            <SelectItem value="out">Habis Stok</SelectItem>
           </SelectContent>
         </Select>
 
@@ -332,7 +332,7 @@ export function AdminCabangInventory() {
                       </td>
                       <td className="py-4 px-3 text-center">
                         {stockStatus === "out" && (
-                          <Badge className="bg-red-600">❌ Habis</Badge>
+                          <Badge className="bg-red-600">Habis</Badge>
                         )}
                         {stockStatus === "low" && (
                           <Badge className="bg-orange-600">
@@ -341,7 +341,7 @@ export function AdminCabangInventory() {
                           </Badge>
                         )}
                         {stockStatus === "ok" && (
-                          <Badge className="bg-green-600">✓ Baik</Badge>
+                          <Badge className="bg-green-600">Baik</Badge>
                         )}
                       </td>
                       <td className="py-4 px-3">

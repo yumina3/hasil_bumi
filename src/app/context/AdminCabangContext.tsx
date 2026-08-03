@@ -126,15 +126,18 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
     const cid = cabangIdRef.current;
     if (!cid) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
     const { count, error } = await supabase
       .from('pesanan')
       .select('id', { count: 'exact', head: true })
       .eq('cabang_id', cid)
       .eq('delivery_method', 'delivery')
       .neq('status_pesanan', 'dibatalkan')
-      .gte('created_at', `${today}T00:00:00+00:00`)
-      .lte('created_at', `${today}T23:59:59+00:00`);
+      .gte('created_at', startOfDay.toISOString())
+      .lte('created_at', endOfDay.toISOString());
 
     if (error) return;
 
@@ -169,7 +172,7 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
           const newOrder = payload.new as Order;
           await checkAndCancelDeliveryIfFull(newOrder);
           await refreshAllData();
-          toast.info(`🛒 Pesanan baru: ${newOrder.no_invoice}`);
+          toast.info(`Pesanan baru: ${newOrder.no_invoice}`);
         }
       )
       .on(
@@ -216,13 +219,16 @@ export function AdminCabangProvider({ children }: { children: ReactNode }) {
          o.status_pesanan === 'pembayaran_lunas'
 ).length;
 
-  const today = new Date().toISOString().split('T')[0];
-  const deliveryOrdersToday = [...orders, ...orderHistory].filter(
-    (o) =>
-      o.delivery_method === 'delivery' &&
-      o.status_pesanan !== 'dibatalkan' &&
-      o.created_at?.startsWith(today)
-  ).length;
+  const now = new Date();
+  const deliveryOrdersToday = [...orders, ...orderHistory].filter((o) => {
+    if (o.delivery_method !== 'delivery' || o.status_pesanan === 'dibatalkan' || !o.created_at) return false;
+    const orderDate = new Date(o.created_at);
+    return (
+      orderDate.getDate() === now.getDate() &&
+      orderDate.getMonth() === now.getMonth() &&
+      orderDate.getFullYear() === now.getFullYear()
+    );
+  }).length;
 
   const isDeliveryQuotaFull = deliveryOrdersToday >= DELIVERY_QUOTA_PER_DAY;
 

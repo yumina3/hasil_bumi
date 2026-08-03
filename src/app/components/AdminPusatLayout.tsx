@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router';
-import { Package, LogOut, Menu, ShoppingBag, Store, BarChart3, Home } from 'lucide-react';
+import { Package, LogOut, Menu, ShoppingBag, Store, BarChart3, Home, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -21,6 +21,7 @@ export function AdminPusatLayout() {
     { path: '/admin-pusat/products', label: 'Kelola Produk', icon: ShoppingBag },
     { path: '/admin-pusat/branches', label: 'Monitor Cabang', icon: Store },
     { path: '/admin-pusat/analytics', label: 'Analytics', icon: BarChart3 },
+    { path: '/admin-pusat/staff', label: 'Manajemen Staf', icon: Users },
   ];
 
   const isActive = (path: string, exact = false) => {
@@ -36,27 +37,23 @@ export function AdminPusatLayout() {
       <aside
         className={`${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static`}
+        } fixed inset-y-0 left-0 z-50 w-72 bg-white border-r transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static`}
       >
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="p-6 border-b bg-gradient-to-r from-green-600 to-green-700">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-white flex items-center justify-center">
-                <Package className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="text-white">
-                <h2 className="font-bold text-lg">Hasil Bumi</h2>
-                <p className="text-xs text-green-100">Admin Pusat</p>
-              </div>
+          {/* Logo & Role Side-by-Side Header */}
+          <div className="py-3 px-3 border-b border-green-100 bg-green-50 flex items-center gap-3">
+            <div className="flex items-center justify-center shrink-0 h-16 w-16 overflow-hidden">
+              <img src="/logo_hasil_bumi.png" alt="Logo Hasil Bumi" className="h-full w-full object-contain transform scale-[3.0] drop-shadow-sm" />
             </div>
-          </div>
-
-          {/* User Info */}
-          <div className="p-4 border-b bg-gray-50">
-            <p className="text-sm font-medium">{user?.name}</p>
-            <p className="text-xs text-gray-500 mb-2">{user?.email}</p>
-            <Badge className="bg-purple-600">Super Admin</Badge>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-green-800 bg-green-100/80 px-1.5 py-0.5 rounded w-fit mb-0.5">
+                Admin Pusat
+              </span>
+              <Link to="/profile" className="text-sm font-semibold text-gray-800 hover:text-green-600 truncate transition-colors" title="Lihat Profil">
+                {user?.name || 'Super Admin'}
+              </Link>
+              <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+            </div>
           </div>
 
           {/* Navigation Menu */}

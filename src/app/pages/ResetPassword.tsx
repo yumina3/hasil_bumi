@@ -232,7 +232,7 @@ export function ResetPassword() {
                       }`}
                     >
                       {newPassword === confirmPassword
-                        ? "✓ Password cocok"
+                        ? "Password cocok"
                         : "Password tidak cocok"}
                     </p>
                   )}

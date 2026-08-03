@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router';
-import { ArrowLeft, Package, CheckCircle, Truck, MapPin, Store, Loader2 } from 'lucide-react';
+import { ArrowLeft, Package, CheckCircle, Truck, MapPin, Store, Loader2, CreditCard } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { supabase } from "../../../utils/supabase/info";
+import qrisImage from '../data/qris.jpeg';
 
 type DeliveryMethod = 'delivery' | 'pick_up';
 
@@ -75,21 +76,7 @@ const DELIVERY_STEPS = [
   },
 ];
 
-const PICKUP_STATUS_ORDER: Record<string, number> = {
-  menunggu_konfirmasi: 0,
-  diproses:            1,
-  dikemas:             2,
-  siap_diambil:        3,
-  selesai:             4,
-};
-
-const DELIVERY_STATUS_ORDER: Record<string, number> = {
-  menunggu_konfirmasi: 0,
-  diproses:            1,
-  dikemas:             2,
-  dikirim:             3,
-  selesai:             4,
-};
+// Hapus PICKUP_STATUS_ORDER dan DELIVERY_STATUS_ORDER karena kita akan pakai logika dinamis
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   menunggu_konfirmasi: { label: 'Menunggu Konfirmasi Toko', color: 'bg-amber-500'  },
@@ -206,10 +193,24 @@ export function OrderTracking() {
 
   const deliveryMethod = (order.delivery_method ?? 'delivery') as DeliveryMethod;
   const isPickup = deliveryMethod === 'pick_up';
-  const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
-  const statusOrder = isPickup ? PICKUP_STATUS_ORDER : DELIVERY_STATUS_ORDER;
+  const isQRIS = order.metode_pembayaran === 'qris' || order.pembayaran?.metode_bayar === 'qris';
 
-  const currentStepIndex = statusOrder[order.status_pesanan] ?? -1;
+  let steps = isPickup ? [...PICKUP_STEPS] : [...DELIVERY_STEPS];
+
+  if (isQRIS) {
+    // Sisipkan step 'Menunggu Pembayaran' setelah 'Menunggu Konfirmasi Toko'
+    steps.splice(1, 0, {
+      key: 'menunggu_pembayaran',
+      status: 'Menunggu Pembayaran',
+      description: 'Toko telah mengonfirmasi pesanan. Silakan lakukan pembayaran.',
+      icon: CreditCard,
+    });
+  }
+
+  let mappedStatus = order.status_pesanan;
+  if (mappedStatus === 'pembayaran_lunas') mappedStatus = 'diproses'; // Anggap lunas masuk tahap diproses
+
+  const currentStepIndex = steps.findIndex(s => s.key === mappedStatus);
 
   const isCancelled = order.status_pesanan === 'dibatalkan';
   const currentStatus = STATUS_LABEL[order.status_pesanan] ?? { label: order.status_pesanan, color: 'bg-gray-500' };
@@ -240,6 +241,58 @@ export function OrderTracking() {
           </div>
         </div>
 
+        {/* ── Pembayaran QRIS (Menunggu Pembayaran) ── */}
+        {order.status_pesanan === 'menunggu_pembayaran' && (order.metode_pembayaran === 'qris' || order.pembayaran?.metode_bayar === 'qris') && (
+          <Card className="mb-6 border-2 border-purple-300 bg-purple-50/40 shadow-md overflow-hidden">
+            <CardHeader className="text-center pb-2 bg-purple-100/50">
+              <CardTitle className="text-lg font-black text-purple-950 flex items-center justify-center gap-2">
+                Pembayaran QRIS Diperlukan
+              </CardTitle>
+              <p className="text-xs text-purple-800">
+                Pesanan Anda telah dikonfirmasi toko. Silakan scan kode QRIS di bawah ini dengan nominal pas:
+              </p>
+            </CardHeader>
+            <CardContent className="text-center space-y-4 pt-4">
+              <div className="bg-white p-4 rounded-2xl border border-purple-200 w-fit mx-auto shadow-sm">
+                <img src={qrisImage} alt="QRIS Hasil Bumi" className="w-56 h-auto mx-auto rounded-xl object-contain" />
+                <p className="text-xs font-bold text-gray-800 mt-2">HASIL BUMI INDONESIA</p>
+                <p className="text-lg font-black text-purple-700">{formatPrice(order.total_bayar)}</p>
+              </div>
+              <div className="p-3.5 bg-purple-100/80 rounded-xl text-xs text-purple-950 max-w-md mx-auto space-y-1.5 border border-purple-200">
+                <p className="font-bold flex items-center justify-center gap-1.5 text-sm text-purple-900">
+                  Menunggu Pembayaran Masuk...
+                </p>
+                <p className="text-[11px] leading-relaxed text-purple-800">
+                  Silakan transfer melalui m-Banking atau e-Wallet (Gopay, OVO, DANA, ShopeePay, BCA, dll). Admin Toko sedang memantau rekening masuk secara langsung. Setelah dana diterima, pesanan Anda otomatis langsung diproses dan dikirim ke alamat!
+                </p>
+              </div>
+
+              {/* Tombol Kirim Bukti Transfer */}
+              <div className="pt-2">
+                <Button 
+                  className="w-full max-w-sm bg-green-600 hover:bg-green-700 font-bold"
+                  onClick={() => {
+                    let phone = cabang?.no_telepon || cabang?.telp || '';
+                    if (phone.startsWith('0')) {
+                      phone = '62' + phone.substring(1);
+                    } else if (!phone) {
+                      phone = '6281234567890'; // fallback
+                    }
+                    const message = `Halo Admin Hasil Bumi,\n\nSaya ingin mengirimkan bukti transfer untuk pesanan dengan rincian berikut:\n- No. Invoice: *${order.no_invoice}*\n- Total Bayar: *${formatPrice(order.total_bayar)}*\n\nBerikut adalah gambar bukti transfernya. Terima kasih.`;
+                    const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(message)}`;
+                    window.open(waUrl, '_blank');
+                  }}
+                >
+                  Kirim Bukti Transfer via WhatsApp
+                </Button>
+                <p className="text-[10px] text-gray-500 mt-2">
+                  *Klik tombol di atas untuk mengirimkan screenshot bukti transfer Anda ke Admin
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── Status Tracking ── */}
         <Card className="mb-6">
           <CardHeader>
@@ -248,7 +301,7 @@ export function OrderTracking() {
                 {isPickup ? 'Status Pengambilan' : 'Status Pengiriman'}
               </CardTitle>
               <Badge variant="outline" className="font-normal">
-                {isPickup ? '🏪 Ambil di Toko' : '🚚 Diantar ke Rumah'}
+                {isPickup ? 'Ambil di Toko' : 'Diantar ke Rumah'}
               </Badge>
             </div>
           </CardHeader>
@@ -263,10 +316,10 @@ export function OrderTracking() {
                 {steps.map((step, index) => {
                   const Icon = step.icon;
 
-                  // ✅ FIX: Logika stepCompleted yang benar — cukup bandingkan index dengan currentStepIndex
+                  // FIX: Logika stepCompleted yang benar — cukup bandingkan index dengan currentStepIndex
                   const stepCompleted = currentStepIndex !== -1 && index <= currentStepIndex;
 
-                  // ✅ FIX: isCurrent cukup cek index === currentStepIndex
+                  // FIX: isCurrent cukup cek index === currentStepIndex
                   const isCurrent = index === currentStepIndex;
 
                   const isDikirimStep = !isPickup && step.key === 'dikirim';
@@ -316,21 +369,21 @@ export function OrderTracking() {
 
                         {isDikirimStep && pengiriman && stepCompleted && (
                           <div className="mt-3 p-3 bg-indigo-50 rounded-xl text-xs text-indigo-700 space-y-1.5">
-                            <p>🚚 Kurir: <strong>{pengiriman.nama_kurir ?? '-'}</strong></p>
+                            <p>Kurir: <strong>{pengiriman.nama_kurir ?? '-'}</strong></p>
                             {pengiriman.no_resi_lokal && (
-                              <p>📦 No. Resi: <strong>{pengiriman.no_resi_lokal}</strong></p>
+                              <p>No. Resi: <strong>{pengiriman.no_resi_lokal}</strong></p>
                             )}
                             {pengiriman.jarak_km && (
-                              <p>📍 Jarak: <strong>{pengiriman.jarak_km} km</strong></p>
+                              <p>Jarak: <strong>{pengiriman.jarak_km} km</strong></p>
                             )}
                             {pengiriman.jadwal_kirim && (
-                              <p>🕐 Jadwal Kirim: <strong>{formatDate(pengiriman.jadwal_kirim)}</strong></p>
+                              <p>Jadwal Kirim: <strong>{formatDate(pengiriman.jadwal_kirim)}</strong></p>
                             )}
                             {pengiriman.status_pengiriman && (
-                              <p>📌 Status: <strong className="capitalize">{pengiriman.status_pengiriman}</strong></p>
+                              <p>Status: <strong className="capitalize">{pengiriman.status_pengiriman}</strong></p>
                             )}
                             {pengiriman.updated_at && (
-                              <p>🔄 Update: <strong>{formatDate(pengiriman.updated_at)}</strong></p>
+                              <p>Update: <strong>{formatDate(pengiriman.updated_at)}</strong></p>
                             )}
                           </div>
                         )}

@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ShoppingCart, Menu, X, User, LogIn, Package, LogOut } from 'lucide-react';
+import { ShoppingCart, Menu, X, User, LogIn, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,16 +19,16 @@ export function Header() {
   };
 
   return (
-    <header className="bg-white shadow-md sticky top-0 z-50">
-      <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+    <header className="bg-green-50 border-b border-green-100 shadow-sm sticky top-0 z-50">
+      <div className="w-full px-4 lg:px-6">
+        <div className="flex items-center justify-between h-20">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xl">HB</span>
+          <Link to="/" className="flex items-center gap-3">
+            <div className="h-16 w-16 shrink-0 overflow-hidden flex items-center justify-center">
+              <img src="/logo_hasil_bumi.png" alt="Logo Hasil Bumi" className="h-full w-full object-contain transform scale-[3.0] drop-shadow-sm" />
             </div>
             <div className="hidden sm:block">
-              <h1 className="font-bold text-xl text-gray-900">Hasil Bumi</h1>
+              <h1 className="font-bold text-2xl text-gray-900">Hasil Bumi</h1>
               <p className="text-xs text-gray-500">Fresh & Organic</p>
             </div>
           </Link>
@@ -42,8 +42,7 @@ export function Header() {
               Produk
             </Link>
             {isAuthenticated && user?.role === 'pelanggan' && (
-              <Link to="/orders" className="text-gray-700 hover:text-green-600 font-medium transition-colors flex items-center gap-2">
-                <Package className="h-4 w-4" />
+              <Link to="/orders" className="text-gray-700 hover:text-green-600 font-medium transition-colors">
                 Pesanan
               </Link>
             )}
@@ -53,10 +52,10 @@ export function Header() {
           <div className="flex items-center gap-2">
             {isAuthenticated ? (
               <>
-                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg mr-2">
+                <Link to="/profile" className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-green-50 hover:bg-green-100 rounded-lg mr-2 transition-colors cursor-pointer">
                   <User className="h-4 w-4 text-green-600" />
                   <span className="text-sm font-medium text-green-700">{user?.name}</span>
-                </div>
+                </Link>
                 {user?.role === 'pelanggan' && (
                   <Link to="/cart">
                     <Button variant="outline" className="relative gap-2">
@@ -111,7 +110,7 @@ export function Header() {
 
         {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="md:hidden py-4 border-t">
+          <div className="md:hidden py-4 border-t border-green-100">
             <nav className="flex flex-col gap-4">
               <Link
                 to="/"
@@ -130,11 +129,19 @@ export function Header() {
               {isAuthenticated && user?.role === 'pelanggan' && (
                 <Link
                   to="/orders"
+                  className="text-gray-700 hover:text-green-600 font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Pesanan
+                </Link>
+              )}
+              {isAuthenticated && (
+                <Link
+                  to="/profile"
                   className="text-gray-700 hover:text-green-600 font-medium flex items-center gap-2"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  <Package className="h-4 w-4" />
-                  Pesanan
+                  <User className="h-4 w-4" /> Profil Saya
                 </Link>
               )}
               {isAuthenticated ? (

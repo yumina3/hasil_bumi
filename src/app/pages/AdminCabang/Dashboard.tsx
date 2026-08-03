@@ -17,7 +17,7 @@ export function AdminCabangDashboard() {
       {lowStockItems > 0 && (
         <Alert className="border-red-200 bg-red-50">
           <AlertTriangle className="h-4 w-4 text-red-600" />
-          <AlertTitle className="text-red-800 font-bold">⚠️ LOW STOCK ALERT!</AlertTitle>
+          <AlertTitle className="text-red-800 font-bold">LOW STOCK ALERT!</AlertTitle>
           <AlertDescription className="text-red-700">
             <strong>{lowStockItems} produk</strong> memiliki stok di bawah 25 unit. Segera lakukan restock untuk menghindari kehabisan stok!
           </AlertDescription>
@@ -40,7 +40,7 @@ export function AdminCabangDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-red-700 font-semibold mb-1">⚠️ Stok Rendah</p>
+                <p className="text-sm text-red-700 font-semibold mb-1">Stok Rendah</p>
                 <p className="text-4xl font-bold text-red-900">{lowStockItems}</p>
                 <p className="text-xs text-red-600 mt-2">Produk {"<"} 25 unit</p>
               </div>
@@ -55,7 +55,7 @@ export function AdminCabangDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-blue-700 font-semibold mb-1">🆕 Pesanan Baru</p>
+                <p className="text-sm text-blue-700 font-semibold mb-1">Pesanan Baru</p>
                 <p className="text-4xl font-bold text-blue-900">{newOrders}</p>
                 <p className="text-xs text-blue-600 mt-2">Perlu konfirmasi</p>
               </div>
@@ -70,7 +70,7 @@ export function AdminCabangDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-green-700 font-semibold mb-1">🚚 Delivery Hari Ini</p>
+                <p className="text-sm text-green-700 font-semibold mb-1">Delivery Hari Ini</p>
                 <p className="text-4xl font-bold text-green-900">{deliveryOrdersToday}<span className="text-2xl">/100</span></p>
                 <p className="text-xs text-green-600 mt-2">Kuota harian</p>
               </div>
@@ -85,7 +85,7 @@ export function AdminCabangDashboard() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-purple-700 font-semibold mb-1">📦 Total Produk</p>
+                <p className="text-sm text-purple-700 font-semibold mb-1">Total Produk</p>
                 <p className="text-4xl font-bold text-purple-900">24</p>
                 <p className="text-xs text-purple-600 mt-2">SKU tersedia</p>
               </div>

@@ -44,11 +44,21 @@ function Sidebar() {
   ];
 
   return (
-    <div className="w-64 bg-white border-r flex flex-col h-screen shrink-0">
+    <div className="w-72 bg-white border-r flex flex-col h-screen shrink-0">
       {/* Header */}
-      <div className="p-6 border-b bg-green-700">
-        <h1 className="text-xl font-bold text-white">🌿 Admin Cabang</h1>
-        <p className="text-sm text-green-100 mt-1 truncate">{user?.email}</p>
+      <div className="py-3 px-3 border-b border-green-100 bg-green-50 flex items-center gap-3">
+        <div className="flex items-center justify-center shrink-0 h-16 w-16 overflow-hidden">
+          <img src="/logo_hasil_bumi.png" alt="Logo Hasil Bumi" className="h-full w-full object-contain transform scale-[3.0] drop-shadow-sm" />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-green-800 bg-green-100/80 px-1.5 py-0.5 rounded w-fit mb-0.5">
+            Admin Cabang
+          </span>
+          <Link to="/profile" className="text-sm font-semibold text-gray-800 hover:text-green-600 truncate transition-colors" title="Lihat Profil">
+            {user?.name || 'Kepala Cabang'}
+          </Link>
+          <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+        </div>
       </div>
 
       {/* Nav */}

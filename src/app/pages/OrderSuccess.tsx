@@ -72,7 +72,7 @@ export function OrderSuccess() {
                 <div className="text-left">
                   <p className="text-gray-600">Metode Pengiriman</p>
                   <p className="font-semibold">
-                    {deliveryMethod === 'delivery' ? '🚚 Delivery' : '🏪 Pick Up'}
+                    {deliveryMethod === 'delivery' ? 'Delivery' : 'Pick Up'}
                   </p>
                 </div>
                 <div className="text-left">

@@ -1,4 +1,4 @@
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { projectId, publicAnonKey, supabase } from '../../../utils/supabase/info';
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-376a5b07`;
 
 // Helper untuk get auth token
@@ -268,4 +268,211 @@ export const seedDatabase = async () => {
     console.error('Error seeding database:', error);
     throw error;
   }
+};
+
+// ============================================
+// AUTH & REGISTRATION API (Clean Architecture)
+// ============================================
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  fullName: string;
+  username: string;
+  phone?: string;
+  address?: string;
+  role: 'pelanggan' | 'admin_cabang' | 'admin_pusat';
+  cabangId?: number | null;
+}
+
+export const registerAccount = async (payload: RegisterPayload) => {
+  try {
+    const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Gagal mendaftarkan akun');
+    }
+    return data;
+  } catch (error) {
+    console.error('Error registering account:', error);
+    throw error;
+  }
+};
+
+export const activateAccount = async (userId: string) => {
+  try {
+    const response = await fetch(`https://${projectId}.supabase.co/functions/v1/server/activate-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Gagal mengaktifkan akun');
+    }
+    return data;
+  } catch (error) {
+    console.error('Error activating account:', error);
+    throw error;
+  }
+};
+
+// ============================================
+// CLEAN DATA SERVICE LAYER (Database Queries)
+// ============================================
+
+export const fetchUsersList = async () => {
+  const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const fetchCabangList = async () => {
+  const { data, error } = await supabase.from('cabang').select('*').order('id');
+  if (error) throw error;
+  return data || [];
+};
+
+export interface CabangPayload {
+  nama_cabang: string;
+  lokasi: string;
+  alamat_lengkap?: string;
+  jam_operasional?: string;
+  no_telepon?: string;
+  is_active?: boolean;
+}
+
+export const createCabang = async (payload: CabangPayload) => {
+  const { data, error } = await supabase
+    .from('cabang')
+    .insert([{ ...payload, is_active: payload.is_active ?? true }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const fetchStokPerCabangView = async () => {
+  const { data, error } = await supabase.from('view_stok_per_cabang').select('*');
+  if (error) throw error;
+  return data || [];
+};
+
+export const fetchProdukList = async () => {
+  const { data, error } = await supabase.from('produk').select('*');
+  if (error) throw error;
+  return data || [];
+};
+
+export const fetchPesananList = async () => {
+  const { data, error } = await supabase.from('pesanan').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+// ============================================
+// ORDER SERVICE (Admin Cabang Operations)
+// ============================================
+
+export type OrderStatus =
+  | 'menunggu_konfirmasi'   
+  | 'menunggu_pembayaran'
+  | 'pembayaran_lunas'
+  | 'diproses'
+  | 'dikemas'
+  | 'dikirim'
+  | 'siap_diambil'
+  | 'selesai'
+  | 'dibatalkan'
+  | 'ditolak';
+
+export const orderService = {
+  async getActiveOrders(cabangId: number) {
+    const { data, error } = await supabase
+      .from('pesanan')
+      .select(`
+        *,
+        users (nama_lengkap, no_telepon),
+        pembayaran (metode_bayar, status_pembayaran)
+      `)
+      .eq('cabang_id', cabangId)
+      .neq('status_pesanan', 'selesai')
+      .neq('status_pesanan', 'dibatalkan')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getInventory(cabangId: number) {
+    const { data, error } = await supabase
+      .from('stok')
+      .select(`
+        id,
+        jumlah_stok,
+        threshold_stok,
+        produk (nama_produk, sku, satuan, harga_jual)
+      `)
+      .eq('cabang_id', cabangId);
+
+    if (error) throw error;
+    return data;
+  },
+
+  async updateStatus(pesananId: number, status: OrderStatus) {
+    const { error } = await supabase
+      .from('pesanan')
+      .update({ status_pesanan: status })
+      .eq('id', pesananId);
+
+    if (error) throw error;
+  },
+
+  async rejectOrder(pesananId: number, alasanPenolakan: string) {
+    const { error } = await supabase
+      .from('pesanan')
+      .update({
+        status_pesanan: 'ditolak',
+        alasan_penolakan: alasanPenolakan,
+      })
+    if (error) throw error;
+  },
+};
+
+export const fetchProdukWithStokCabang = async (cabangId?: number | null, limit?: number) => {
+  let query = supabase.from('produk').select('*').eq('is_active', true);
+  if (limit) {
+    query = query.limit(limit);
+  }
+  const { data: products, error: prodError } = await query;
+  if (prodError) throw prodError;
+  let result = products || [];
+
+  if (cabangId) {
+    const { data: stokList } = await supabase
+      .from('stok')
+      .select('produk_id, jumlah_stok')
+      .eq('cabang_id', cabangId);
+
+    if (stokList) {
+      const stokMap = new Map();
+      stokList.forEach((s: any) => stokMap.set(s.produk_id, s.jumlah_stok));
+      result = result.map((p: any) => {
+        const branchStok = stokMap.has(p.id) ? stokMap.get(p.id) : 0;
+        return {
+          ...p,
+          stok: branchStok,
+          stock: branchStok,
+          jumlah_stok: branchStok,
+        };
+      });
+    }
+  }
+  return result;
 };

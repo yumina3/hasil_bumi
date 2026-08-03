@@ -71,7 +71,9 @@ export function Receipt() {
             {/* Header Struk */}
             <div className="text-center mb-4">
               <div className="flex items-center justify-center gap-2 mb-1">
-                <div className="bg-green-600 text-white text-xs font-bold px-2 py-0.5 rounded">HB</div>
+                <div className="h-12 w-12 shrink-0 overflow-hidden flex items-center justify-center">
+                  <img src="/logo_hasil_bumi.png" alt="Logo Hasil Bumi" className="h-full w-full object-contain transform scale-[1.4]" />
+                </div>
                 <span className="font-bold text-lg text-green-800">Hasil Bumi</span>
               </div>
               <p className="text-xs text-gray-400">Fresh & Organic</p>
@@ -153,8 +155,8 @@ export function Receipt() {
                 : 'bg-yellow-50 text-yellow-700'
             }`}>
               {state.paymentMethod === 'qris'
-                ? '✓ LUNAS - Pembayaran Diterima'
-                : '⏳ MENUNGGU PEMBAYARAN COD'}
+                ? 'LUNAS - Pembayaran Diterima'
+                : 'MENUNGGU PEMBAYARAN COD'}
             </div>
 
             {/* Footer Struk */}

@@ -12,20 +12,20 @@ export function AppInitializer({ children }: { children: React.ReactNode }) {
         const isSeeded = localStorage.getItem('hasil_bumi_seeded');
         
         if (!isSeeded) {
-          console.log('🌱 Seeding database for first time...');
+          console.log('Seeding database for first time...');
           const result = await seedDatabase();
           
           if (result.success || result.skip) {
-            console.log('✅ Database seeded successfully!', result);
+            console.log('Database seeded successfully!', result);
             localStorage.setItem('hasil_bumi_seeded', 'true');
           }
         } else {
-          console.log('✅ Database already seeded');
+          console.log('Database already seeded');
         }
         
         setInitialized(true);
       } catch (err: any) {
-        console.error('❌ Failed to initialize app:', err);
+        console.error('Failed to initialize app:', err);
         // Don't block app if seed fails - data might already exist
         setError(err.message);
         setInitialized(true);
@@ -48,7 +48,7 @@ export function AppInitializer({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
-    console.warn('⚠️ Initialization warning:', error);
+    console.warn('Initialization warning:', error);
     // Still render app even with error - seed might have already happened
   }
 
